@@ -9,14 +9,8 @@ export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: NotesColors.primary,
-        tabBarInactiveTintColor: NotesColors.textSecondary,
-        tabBarStyle: {
-          backgroundColor: NotesColors.background,
-          borderTopColor: NotesColors.card,
-        },
+        tabBarStyle: { display: 'none' },
         headerShown: false,
-        tabBarButton: HapticTab,
       }}>
       <Tabs.Screen
         name="index"

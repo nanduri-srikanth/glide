@@ -38,13 +38,19 @@ export default function NoteListScreen() {
   const [isEditMode, setIsEditMode] = useState(false);
   const [selectedNotes, setSelectedNotes] = useState<Set<string>>(new Set());
 
+  const folder = folders.find((f) => f.id === folderId) || mockFolders.find((f) => f.id === folderId);
+  const isAllNotesFolder = folder?.name === 'All Notes';
+
   useEffect(() => {
     if (isAuthenticated && folderId) {
-      fetchNotes(folderId);
+      // For "All Notes" folder, fetch all notes without folder filter
+      if (isAllNotesFolder) {
+        fetchNotes(undefined);
+      } else {
+        fetchNotes(folderId);
+      }
     }
-  }, [isAuthenticated, folderId, fetchNotes]);
-
-  const folder = folders.find((f) => f.id === folderId) || mockFolders.find((f) => f.id === folderId);
+  }, [isAuthenticated, folderId, isAllNotesFolder, fetchNotes]);
 
   // Use API notes if available, otherwise fall back to mock data
   const notes: Note[] = useMemo(() => {
@@ -126,10 +132,14 @@ export default function NoteListScreen() {
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     if (isAuthenticated && folderId) {
-      await fetchNotes(folderId);
+      if (isAllNotesFolder) {
+        await fetchNotes(undefined);
+      } else {
+        await fetchNotes(folderId);
+      }
     }
     setRefreshing(false);
-  }, [isAuthenticated, folderId, fetchNotes]);
+  }, [isAuthenticated, folderId, isAllNotesFolder, fetchNotes]);
 
   const handleSearch = useCallback(async (query: string) => {
     setSearchQuery(query);
@@ -143,12 +153,12 @@ export default function NoteListScreen() {
     if (success) {
       // Refresh the list
       if (isAuthenticated && folderId) {
-        await fetchNotes(folderId);
+        await fetchNotes(isAllNotesFolder ? undefined : folderId);
       }
     } else {
       Alert.alert('Error', 'Failed to delete note. Please try again.');
     }
-  }, [deleteNote, isAuthenticated, folderId, fetchNotes]);
+  }, [deleteNote, isAuthenticated, folderId, isAllNotesFolder, fetchNotes]);
 
   const handleSelectNote = useCallback((noteId: string) => {
     setSelectedNotes(prev => {
@@ -180,7 +190,7 @@ export default function NoteListScreen() {
             setSelectedNotes(new Set());
             setIsEditMode(false);
             if (isAuthenticated && folderId) {
-              await fetchNotes(folderId);
+              await fetchNotes(isAllNotesFolder ? undefined : folderId);
             }
           },
         },
