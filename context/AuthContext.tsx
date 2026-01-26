@@ -4,6 +4,7 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { authService, User } from '@/services/auth';
+import { notesService } from '@/services/notes';
 import api from '@/services/api';
 
 interface AuthContextType {
@@ -31,7 +32,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       if (api.isAuthenticated()) {
         const { user: userData } = await authService.getCurrentUser();
-        if (userData) setUser(userData);
+        if (userData) {
+          setUser(userData);
+          // Ensure default folders exist
+          try {
+            await notesService.setupDefaultFolders();
+          } catch (e) {
+            // Ignore - folders may already exist
+          }
+        }
       }
     } catch (error) {
       console.error('Auth check failed:', error);
@@ -40,11 +49,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const setupUserDefaults = async () => {
+    // Setup default folders for new users
+    try {
+      await notesService.setupDefaultFolders();
+    } catch (error) {
+      console.log('Default folders setup:', error);
+    }
+  };
+
   const login = async (email: string, password: string) => {
     const result = await authService.login({ email, password });
     if (result.success) {
       const { user: userData } = await authService.getCurrentUser();
       if (userData) setUser(userData);
+      await setupUserDefaults();
     }
     return result;
   };
@@ -65,6 +84,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (result.success) {
       const { user: userData } = await authService.getCurrentUser();
       if (userData) setUser(userData);
+      await setupUserDefaults();
     }
     return result;
   };

@@ -230,37 +230,57 @@ async def setup_default_folders(
 ):
     """
     Create default folders for a new user.
-    Called during onboarding.
+    Called during onboarding. Always ensures "All Notes" exists.
     """
-    # Check if user already has folders
+    # Check if "All Notes" folder exists
     result = await db.execute(
+        select(Folder)
+        .where(Folder.user_id == current_user.id)
+        .where(Folder.name == "All Notes")
+    )
+    all_notes_exists = result.scalar_one_or_none() is not None
+
+    # Check total folder count
+    count_result = await db.execute(
         select(func.count(Folder.id))
         .where(Folder.user_id == current_user.id)
     )
-    count = result.scalar() or 0
+    count = count_result.scalar() or 0
 
-    if count > 0:
-        return {"message": "Folders already exist", "count": count}
+    created = 0
 
-    default_folders = [
-        {"name": "All Notes", "icon": "folder.fill", "is_system": True, "sort_order": 0},
-        {"name": "Work", "icon": "briefcase.fill", "sort_order": 1},
-        {"name": "Personal", "icon": "person.fill", "sort_order": 2},
-        {"name": "Ideas", "icon": "lightbulb.fill", "sort_order": 3},
-        {"name": "Meetings", "icon": "person.2.fill", "sort_order": 4},
-        {"name": "Recently Deleted", "icon": "trash.fill", "is_system": True, "sort_order": 99},
-    ]
-
-    for folder_data in default_folders:
-        folder = Folder(
+    # Always ensure "All Notes" exists
+    if not all_notes_exists:
+        all_notes = Folder(
             user_id=current_user.id,
-            name=folder_data["name"],
-            icon=folder_data["icon"],
-            is_system=folder_data.get("is_system", False),
-            sort_order=folder_data["sort_order"],
+            name="All Notes",
+            icon="folder",
+            is_system=True,
+            sort_order=0,
         )
-        db.add(folder)
+        db.add(all_notes)
+        created += 1
 
-    await db.commit()
+    # Only create other defaults if no folders exist
+    if count == 0 or (count == 1 and not all_notes_exists):
+        default_folders = [
+            {"name": "Work", "icon": "briefcase", "sort_order": 1},
+            {"name": "Personal", "icon": "person", "sort_order": 2},
+            {"name": "Ideas", "icon": "lightbulb", "sort_order": 3},
+        ]
 
-    return {"message": "Default folders created", "count": len(default_folders)}
+        for folder_data in default_folders:
+            folder = Folder(
+                user_id=current_user.id,
+                name=folder_data["name"],
+                icon=folder_data["icon"],
+                is_system=False,
+                sort_order=folder_data["sort_order"],
+            )
+            db.add(folder)
+            created += 1
+
+    if created > 0:
+        await db.commit()
+
+    return {"message": f"Folders setup complete", "created": created}

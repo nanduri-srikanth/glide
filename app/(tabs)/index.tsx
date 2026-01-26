@@ -17,6 +17,8 @@ export default function FoldersScreen() {
   const { folders, isLoading, error, fetchFolders } = useNotes();
   const [searchQuery, setSearchQuery] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [selectedFolders, setSelectedFolders] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (isAuthenticated) fetchFolders();
@@ -33,6 +35,45 @@ export default function FoldersScreen() {
   const handleFolderPress = (folder: Folder) => router.push(`/notes/${folder.id}`);
   const handleComposePress = () => router.push('/recording');
   const handleMicPress = () => router.push('/recording');
+
+  const handleAddFolder = async () => {
+    if (!isAuthenticated) {
+      Alert.alert('Sign In Required', 'Please sign in to create folders.');
+      return;
+    }
+
+    Alert.prompt(
+      'New Folder',
+      'Enter a name for this folder',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Create',
+          onPress: async (name) => {
+            if (name?.trim()) {
+              const { notesService } = await import('@/services/notes');
+              const { data, error } = await notesService.createFolder({
+                name: name.trim(),
+                icon: 'folder',
+              });
+
+              if (error) {
+                Alert.alert('Error', error);
+                return;
+              }
+
+              if (data) {
+                await fetchFolders();
+              }
+            }
+          },
+        },
+      ],
+      'plain-text',
+      '',
+      'default'
+    );
+  };
 
   const handleAuthPress = () => {
     if (isAuthenticated) {
@@ -55,12 +96,13 @@ export default function FoldersScreen() {
     setRefreshing(false);
   }, [isAuthenticated, fetchFolders]);
 
+  const toggleEditMode = useCallback(() => {
+    setIsEditMode(prev => !prev);
+    setSelectedFolders(new Set());
+  }, []);
+
   const renderHeader = () => (
     <View style={styles.header}>
-      <View style={styles.iCloudHeader}>
-        <Ionicons name="cloud" size={20} color={NotesColors.primary} />
-        <Text style={styles.iCloudText}>iCloud</Text>
-      </View>
       {!isAuthenticated && (
         <TouchableOpacity style={styles.signInBanner} onPress={handleAuthPress}>
           <Ionicons name="log-in-outline" size={16} color={NotesColors.primary} />
@@ -87,8 +129,18 @@ export default function FoldersScreen() {
               color={isAuthenticated ? NotesColors.primary : NotesColors.textSecondary}
             />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.editButton}>
-            <Text style={styles.editText}>Edit</Text>
+          <TouchableOpacity style={styles.iconButton} onPress={handleAddFolder}>
+            <View style={styles.addFolderIcon}>
+              <Ionicons name="folder-outline" size={24} color={NotesColors.primary} />
+              <View style={styles.addBadge}>
+                <Ionicons name="add" size={12} color={NotesColors.textPrimary} />
+              </View>
+            </View>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.editButton} onPress={toggleEditMode}>
+            <Text style={isEditMode ? styles.doneText : styles.editText}>
+              {isEditMode ? 'Done' : 'Edit'}
+            </Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -120,11 +172,22 @@ const styles = StyleSheet.create({
   title: { fontSize: 34, fontWeight: '700', color: NotesColors.textPrimary },
   headerButtons: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   iconButton: { padding: 4 },
-  editButton: { paddingHorizontal: 12, paddingVertical: 6 },
+  addFolderIcon: { position: 'relative' },
+  addBadge: {
+    position: 'absolute',
+    bottom: -2,
+    right: -4,
+    backgroundColor: NotesColors.primary,
+    borderRadius: 6,
+    width: 14,
+    height: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  editButton: { padding: 4 },
   editText: { fontSize: 17, color: NotesColors.primary },
-  header: { marginBottom: 16 },
-  iCloudHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
-  iCloudText: { fontSize: 20, fontWeight: '600', color: NotesColors.textPrimary },
+  doneText: { fontSize: 17, fontWeight: '600', color: NotesColors.primary },
+  header: { marginBottom: 8 },
   signInBanner: {
     flexDirection: 'row',
     alignItems: 'center',

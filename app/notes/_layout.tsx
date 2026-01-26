@@ -1,7 +1,11 @@
-import { Stack } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
+import { TouchableOpacity, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { NotesColors } from '@/constants/theme';
 
 export default function NotesLayout() {
+  const router = useRouter();
+
   return (
     <Stack
       screenOptions={{
@@ -16,7 +20,6 @@ export default function NotesLayout() {
         contentStyle: {
           backgroundColor: NotesColors.background,
         },
-        headerBackTitle: 'Back',
       }}
     >
       <Stack.Screen
@@ -26,6 +29,15 @@ export default function NotesLayout() {
           headerLargeTitleStyle: {
             color: NotesColors.textPrimary,
           },
+          headerLeft: () => (
+            <TouchableOpacity
+              onPress={() => router.back()}
+              style={{ flexDirection: 'row', alignItems: 'center', marginLeft: -8 }}
+            >
+              <Ionicons name="chevron-back" size={28} color={NotesColors.primary} />
+              <Text style={{ color: NotesColors.primary, fontSize: 17 }}>Folders</Text>
+            </TouchableOpacity>
+          ),
         }}
       />
       <Stack.Screen
