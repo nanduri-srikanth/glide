@@ -41,3 +41,24 @@ app-example
 # generated native folders
 /ios
 /android
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.env
+
+# Node
+node_modules/
+
+# iOS/Android
+ios/
+android/
+
+# Expo
+.expo/
+
+# Misc
+.DS_Store
+*.log
