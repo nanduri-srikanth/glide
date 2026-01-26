@@ -1,0 +1,358 @@
+import React, { useState, useEffect } from 'react';
+import {
+  StyleSheet,
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  SafeAreaView,
+  KeyboardAvoidingView,
+  Platform,
+  ActivityIndicator,
+  Alert,
+} from 'react-native';
+import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import * as AppleAuthentication from 'expo-apple-authentication';
+import { NotesColors } from '@/constants/theme';
+import { useAuth } from '@/context/AuthContext';
+
+type AuthMode = 'login' | 'register';
+
+export default function AuthScreen() {
+  const router = useRouter();
+  const { login, register, signInWithApple, isLoading } = useAuth();
+  const [mode, setMode] = useState<AuthMode>('login');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [appleAuthAvailable, setAppleAuthAvailable] = useState(false);
+  const [isAppleLoading, setIsAppleLoading] = useState(false);
+
+  useEffect(() => {
+    AppleAuthentication.isAvailableAsync().then(setAppleAuthAvailable);
+  }, []);
+
+  const handleSubmit = async () => {
+    if (!email.trim() || !password.trim()) {
+      Alert.alert('Error', 'Please fill in all fields');
+      return;
+    }
+
+    if (mode === 'register' && !name.trim()) {
+      Alert.alert('Error', 'Please enter your name');
+      return;
+    }
+
+    let result: { success: boolean; error?: string };
+    if (mode === 'login') {
+      result = await login(email.trim(), password);
+    } else {
+      result = await register(email.trim(), password, name.trim());
+    }
+
+    if (result.success) {
+      router.replace('/(tabs)');
+    } else {
+      Alert.alert(
+        'Error',
+        result.error || (mode === 'login'
+          ? 'Invalid email or password. Please try again.'
+          : 'Registration failed. Please try again.')
+      );
+    }
+  };
+
+  const toggleMode = () => {
+    setMode(mode === 'login' ? 'register' : 'login');
+    setEmail('');
+    setPassword('');
+    setName('');
+  };
+
+  const handleAppleSignIn = async () => {
+    setIsAppleLoading(true);
+    const result = await signInWithApple();
+    setIsAppleLoading(false);
+
+    if (result.success) {
+      router.replace('/(tabs)');
+    } else if (result.error && result.error !== 'Sign-In was cancelled') {
+      Alert.alert('Error', result.error);
+    }
+  };
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.keyboardView}
+      >
+        {/* Header spacer */}
+        <View style={styles.header} />
+
+        {/* Logo/Title */}
+        <View style={styles.logoContainer}>
+          <View style={styles.logoCircle}>
+            <Ionicons name="mic" size={48} color={NotesColors.primary} />
+          </View>
+          <Text style={styles.appName}>Glide</Text>
+          <Text style={styles.tagline}>Voice notes, powered by AI</Text>
+        </View>
+
+        {/* Form */}
+        <View style={styles.form}>
+          {mode === 'register' && (
+            <View style={styles.inputContainer}>
+              <Ionicons name="person-outline" size={20} color={NotesColors.textSecondary} style={styles.inputIcon} />
+              <TextInput
+                style={styles.input}
+                placeholder="Full Name"
+                placeholderTextColor={NotesColors.textSecondary}
+                value={name}
+                onChangeText={setName}
+                autoCapitalize="words"
+                autoCorrect={false}
+              />
+            </View>
+          )}
+
+          <View style={styles.inputContainer}>
+            <Ionicons name="mail-outline" size={20} color={NotesColors.textSecondary} style={styles.inputIcon} />
+            <TextInput
+              style={styles.input}
+              placeholder="Email"
+              placeholderTextColor={NotesColors.textSecondary}
+              value={email}
+              onChangeText={setEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+          </View>
+
+          <View style={styles.inputContainer}>
+            <Ionicons name="lock-closed-outline" size={20} color={NotesColors.textSecondary} style={styles.inputIcon} />
+            <TextInput
+              style={styles.input}
+              placeholder="Password"
+              placeholderTextColor={NotesColors.textSecondary}
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry={!showPassword}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            <TouchableOpacity
+              onPress={() => setShowPassword(!showPassword)}
+              style={styles.eyeButton}
+            >
+              <Ionicons
+                name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                size={20}
+                color={NotesColors.textSecondary}
+              />
+            </TouchableOpacity>
+          </View>
+
+          <TouchableOpacity
+            style={[styles.submitButton, isLoading && styles.submitButtonDisabled]}
+            onPress={handleSubmit}
+            disabled={isLoading}
+          >
+            {isLoading ? (
+              <ActivityIndicator color={NotesColors.textPrimary} />
+            ) : (
+              <Text style={styles.submitButtonText}>
+                {mode === 'login' ? 'Sign In' : 'Create Account'}
+              </Text>
+            )}
+          </TouchableOpacity>
+
+          {mode === 'login' && (
+            <TouchableOpacity style={styles.forgotButton}>
+              <Text style={styles.forgotText}>Forgot Password?</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {/* Social Sign In */}
+        <View style={styles.socialContainer}>
+          <View style={styles.divider}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>or continue with</Text>
+            <View style={styles.dividerLine} />
+          </View>
+
+          <View style={styles.socialButtons}>
+            {appleAuthAvailable && (
+              <AppleAuthentication.AppleAuthenticationButton
+                buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+                buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.WHITE}
+                cornerRadius={12}
+                style={styles.appleButton}
+                onPress={handleAppleSignIn}
+              />
+            )}
+            {isAppleLoading && (
+              <View style={styles.appleLoadingOverlay}>
+                <ActivityIndicator color={NotesColors.primary} />
+              </View>
+            )}
+          </View>
+        </View>
+
+        {/* Toggle Mode */}
+        <View style={styles.toggleContainer}>
+          <Text style={styles.toggleText}>
+            {mode === 'login' ? "Don't have an account?" : 'Already have an account?'}
+          </Text>
+          <TouchableOpacity onPress={toggleMode}>
+            <Text style={styles.toggleLink}>
+              {mode === 'login' ? 'Sign Up' : 'Sign In'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: NotesColors.background,
+  },
+  keyboardView: {
+    flex: 1,
+    paddingHorizontal: 24,
+  },
+  header: {
+    paddingVertical: 16,
+  },
+  logoContainer: {
+    alignItems: 'center',
+    marginTop: 20,
+    marginBottom: 40,
+  },
+  logoCircle: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: 'rgba(98, 69, 135, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  appName: {
+    fontSize: 32,
+    fontWeight: '700',
+    color: NotesColors.textPrimary,
+    marginBottom: 4,
+  },
+  tagline: {
+    fontSize: 16,
+    color: NotesColors.textSecondary,
+  },
+  form: {
+    gap: 16,
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: NotesColors.card,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    height: 56,
+  },
+  inputIcon: {
+    marginRight: 12,
+  },
+  input: {
+    flex: 1,
+    fontSize: 16,
+    color: NotesColors.textPrimary,
+  },
+  eyeButton: {
+    padding: 8,
+  },
+  submitButton: {
+    backgroundColor: NotesColors.primary,
+    borderRadius: 12,
+    height: 56,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  submitButtonDisabled: {
+    opacity: 0.6,
+  },
+  submitButtonText: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: NotesColors.textPrimary,
+  },
+  forgotButton: {
+    alignSelf: 'center',
+    padding: 8,
+  },
+  forgotText: {
+    fontSize: 14,
+    color: NotesColors.primary,
+  },
+  socialContainer: {
+    marginTop: 32,
+  },
+  divider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  dividerLine: {
+    flex: 1,
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: NotesColors.textSecondary,
+  },
+  dividerText: {
+    marginHorizontal: 16,
+    fontSize: 14,
+    color: NotesColors.textSecondary,
+  },
+  socialButtons: {
+    alignItems: 'center',
+    position: 'relative',
+  },
+  appleButton: {
+    width: '100%',
+    height: 56,
+  },
+  appleLoadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    borderRadius: 12,
+  },
+  toggleContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 'auto',
+    marginBottom: 24,
+    gap: 4,
+  },
+  toggleText: {
+    fontSize: 14,
+    color: NotesColors.textSecondary,
+  },
+  toggleLink: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: NotesColors.primary,
+  },
+});

@@ -1,98 +1,142 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+import React, { useState, useEffect, useCallback } from 'react';
+import { StyleSheet, View, Text, FlatList, SafeAreaView, RefreshControl, ActivityIndicator, TouchableOpacity, Alert } from 'react-native';
+import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { NotesColors } from '@/constants/theme';
+import { FolderCard } from '@/components/notes/FolderCard';
+import { SearchBar } from '@/components/notes/SearchBar';
+import { ComposeButton } from '@/components/notes/ComposeButton';
+import { useNotes } from '@/context/NotesContext';
+import { useAuth } from '@/context/AuthContext';
+import { Folder } from '@/data/types';
+import { mockFolders } from '@/data/mockFolders';
 
-import { HelloWave } from '@/components/hello-wave';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Link } from 'expo-router';
+export default function FoldersScreen() {
+  const router = useRouter();
+  const { isAuthenticated, user, logout } = useAuth();
+  const { folders, isLoading, error, fetchFolders } = useNotes();
+  const [searchQuery, setSearchQuery] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
 
-export default function HomeScreen() {
+  useEffect(() => {
+    if (isAuthenticated) fetchFolders();
+  }, [isAuthenticated, fetchFolders]);
+
+  const displayFolders: Folder[] = folders.length > 0
+    ? folders.map(f => ({ id: f.id, name: f.name, icon: f.icon, noteCount: f.note_count, color: f.color || undefined, isSystem: f.is_system }))
+    : mockFolders;
+
+  const filteredFolders = displayFolders.filter(folder =>
+    folder.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const handleFolderPress = (folder: Folder) => router.push(`/notes/${folder.id}`);
+  const handleComposePress = () => router.push('/recording');
+  const handleMicPress = () => router.push('/recording');
+
+  const handleAuthPress = () => {
+    if (isAuthenticated) {
+      Alert.alert(
+        'Account',
+        `Signed in as ${user?.email || 'User'}`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Sign Out', style: 'destructive', onPress: () => logout() },
+        ]
+      );
+    } else {
+      router.push('/auth');
+    }
+  };
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    if (isAuthenticated) await fetchFolders();
+    setRefreshing(false);
+  }, [isAuthenticated, fetchFolders]);
+
+  const renderHeader = () => (
+    <View style={styles.header}>
+      <View style={styles.iCloudHeader}>
+        <Ionicons name="cloud" size={20} color={NotesColors.primary} />
+        <Text style={styles.iCloudText}>iCloud</Text>
+      </View>
+      {!isAuthenticated && (
+        <TouchableOpacity style={styles.signInBanner} onPress={handleAuthPress}>
+          <Ionicons name="log-in-outline" size={16} color={NotesColors.primary} />
+          <Text style={styles.signInBannerText}>Sign in to sync your notes</Text>
+          <Ionicons name="chevron-forward" size={16} color={NotesColors.textSecondary} />
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+
+  const renderFolder = ({ item }: { item: Folder }) => (
+    <FolderCard folder={item} onPress={() => handleFolderPress(item)} />
+  );
+
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert('Action pressed')} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert('Share pressed')}
+    <SafeAreaView style={styles.container}>
+      <View style={styles.titleContainer}>
+        <Text style={styles.title}>Folders</Text>
+        <View style={styles.headerButtons}>
+          <TouchableOpacity style={styles.iconButton} onPress={handleAuthPress}>
+            <Ionicons
+              name={isAuthenticated ? 'person-circle' : 'person-circle-outline'}
+              size={28}
+              color={isAuthenticated ? NotesColors.primary : NotesColors.textSecondary}
             />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert('Delete pressed')}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.editButton}>
+            <Text style={styles.editText}>Edit</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
 
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+      <FlatList
+        data={filteredFolders}
+        renderItem={renderFolder}
+        keyExtractor={(item) => item.id}
+        ListHeaderComponent={renderHeader}
+        ListEmptyComponent={
+          <View style={styles.emptyContainer}>
+            {isLoading ? <ActivityIndicator size="large" color={NotesColors.primary} /> : <Text style={styles.emptyText}>{error || 'No folders found'}</Text>}
+          </View>
+        }
+        contentContainerStyle={styles.listContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={NotesColors.primary} />}
+      />
+
+      <SearchBar value={searchQuery} onChangeText={setSearchQuery} onMicPress={handleMicPress} placeholder="Search" />
+      <ComposeButton onPress={handleComposePress} />
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
+  container: { flex: 1, backgroundColor: NotesColors.background },
+  titleContainer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingTop: 16, paddingBottom: 8 },
+  title: { fontSize: 34, fontWeight: '700', color: NotesColors.textPrimary },
+  headerButtons: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  iconButton: { padding: 4 },
+  editButton: { paddingHorizontal: 12, paddingVertical: 6 },
+  editText: { fontSize: 17, color: NotesColors.primary },
+  header: { marginBottom: 16 },
+  iCloudHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
+  iCloudText: { fontSize: 20, fontWeight: '600', color: NotesColors.textPrimary },
+  signInBanner: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    backgroundColor: 'rgba(98, 69, 135, 0.15)',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+    marginTop: 4,
   },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
-  },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
-  },
+  signInBannerText: { flex: 1, fontSize: 14, color: NotesColors.textPrimary },
+  listContent: { paddingHorizontal: 16, paddingBottom: 120 },
+  emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 60 },
+  emptyText: { fontSize: 17, color: NotesColors.textSecondary },
 });
