@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import {
   StyleSheet,
   View,
@@ -6,6 +6,8 @@ import {
   TouchableOpacity,
   Animated,
   Alert,
+  Modal,
+  Pressable,
 } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,6 +19,8 @@ interface SwipeableNoteCardProps {
   note: Note;
   onPress: () => void;
   onDelete: (noteId: string) => void;
+  onMove: (noteId: string) => void;
+  onPin?: (noteId: string) => void;
   isEditMode: boolean;
   isSelected: boolean;
   onSelect: (noteId: string) => void;
@@ -26,11 +30,62 @@ export function SwipeableNoteCard({
   note,
   onPress,
   onDelete,
+  onMove,
+  onPin,
   isEditMode,
   isSelected,
   onSelect,
 }: SwipeableNoteCardProps) {
   const swipeableRef = useRef<Swipeable>(null);
+  const [showMenu, setShowMenu] = useState(false);
+  const shakeAnim = useRef(new Animated.Value(0)).current;
+  const minusScaleAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (isEditMode) {
+      // Start shake animation
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(shakeAnim, {
+            toValue: 1,
+            duration: 100,
+            useNativeDriver: true,
+          }),
+          Animated.timing(shakeAnim, {
+            toValue: -1,
+            duration: 100,
+            useNativeDriver: true,
+          }),
+          Animated.timing(shakeAnim, {
+            toValue: 1,
+            duration: 100,
+            useNativeDriver: true,
+          }),
+          Animated.timing(shakeAnim, {
+            toValue: 0,
+            duration: 100,
+            useNativeDriver: true,
+          }),
+        ])
+      ).start();
+
+      // Animate minus button in
+      Animated.spring(minusScaleAnim, {
+        toValue: 1,
+        useNativeDriver: true,
+        tension: 50,
+        friction: 7,
+      }).start();
+    } else {
+      // Reset animations
+      shakeAnim.setValue(0);
+      Animated.timing(minusScaleAnim, {
+        toValue: 0,
+        duration: 150,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [isEditMode]);
 
   const handleDelete = () => {
     Alert.alert(
@@ -54,32 +109,64 @@ export function SwipeableNoteCard({
     );
   };
 
+  const handleMove = () => {
+    swipeableRef.current?.close();
+    onMove(note.id);
+  };
+
+  const handleLongPress = () => {
+    setShowMenu(true);
+  };
+
+  const handleMenuOption = (action: string) => {
+    setShowMenu(false);
+    switch (action) {
+      case 'delete':
+        handleDelete();
+        break;
+      case 'move':
+        onMove(note.id);
+        break;
+      case 'pin':
+        onPin?.(note.id);
+        break;
+    }
+  };
+
   const renderRightActions = (
     progress: Animated.AnimatedInterpolation<number>,
     dragX: Animated.AnimatedInterpolation<number>
   ) => {
-    const scale = dragX.interpolate({
-      inputRange: [-100, 0],
-      outputRange: [1, 0.5],
+    const translateX = dragX.interpolate({
+      inputRange: [-160, 0],
+      outputRange: [0, 160],
       extrapolate: 'clamp',
     });
 
     const opacity = dragX.interpolate({
-      inputRange: [-100, -50, 0],
-      outputRange: [1, 0.5, 0],
+      inputRange: [-160, -80, 0],
+      outputRange: [1, 0.8, 0],
       extrapolate: 'clamp',
     });
 
     return (
-      <Animated.View style={[styles.deleteContainer, { opacity }]}>
+      <Animated.View style={[styles.actionsContainer, { opacity, transform: [{ translateX }] }]}>
+        {/* Move button */}
+        <TouchableOpacity
+          style={styles.moveButton}
+          onPress={handleMove}
+        >
+          <Ionicons name="folder-outline" size={22} color="#fff" />
+          <Text style={styles.actionText}>Move</Text>
+        </TouchableOpacity>
+
+        {/* Delete button */}
         <TouchableOpacity
           style={styles.deleteButton}
           onPress={handleDelete}
         >
-          <Animated.View style={{ transform: [{ scale }] }}>
-            <Ionicons name="trash-outline" size={24} color="#fff" />
-          </Animated.View>
-          <Text style={styles.deleteText}>Delete</Text>
+          <Ionicons name="trash-outline" size={22} color="#fff" />
+          <Text style={styles.actionText}>Delete</Text>
         </TouchableOpacity>
       </Animated.View>
     );
@@ -93,52 +180,125 @@ export function SwipeableNoteCard({
     }
   };
 
+  const rotation = shakeAnim.interpolate({
+    inputRange: [-1, 1],
+    outputRange: ['-1.5deg', '1.5deg'],
+  });
+
   if (isEditMode) {
     return (
-      <TouchableOpacity
-        style={styles.editModeContainer}
-        onPress={handlePress}
-        activeOpacity={0.7}
+      <Animated.View
+        style={[
+          styles.editModeContainer,
+          { transform: [{ rotate: rotation }] },
+        ]}
       >
-        <View style={[styles.checkbox, isSelected && styles.checkboxSelected]}>
-          {isSelected && (
-            <Ionicons name="checkmark" size={18} color="#fff" />
-          )}
-        </View>
-        <View style={styles.cardWrapper}>
-          <NoteCard note={note} onPress={handlePress} />
-        </View>
-      </TouchableOpacity>
+        <Animated.View style={[styles.minusButton, { transform: [{ scale: minusScaleAnim }] }]}>
+          <TouchableOpacity onPress={handleDelete} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <View style={styles.minusCircle}>
+              <Ionicons name="remove" size={18} color="#fff" />
+            </View>
+          </TouchableOpacity>
+        </Animated.View>
+        <TouchableOpacity
+          style={styles.cardWrapper}
+          onPress={onPress}
+          activeOpacity={0.7}
+        >
+          <NoteCard note={note} onPress={onPress} />
+        </TouchableOpacity>
+      </Animated.View>
     );
   }
 
   return (
-    <Swipeable
-      ref={swipeableRef}
-      renderRightActions={renderRightActions}
-      rightThreshold={40}
-      overshootRight={false}
-    >
-      <NoteCard note={note} onPress={onPress} />
-    </Swipeable>
+    <>
+      <Swipeable
+        ref={swipeableRef}
+        renderRightActions={renderRightActions}
+        rightThreshold={40}
+        overshootRight={false}
+      >
+        <Pressable onPress={onPress} onLongPress={handleLongPress} delayLongPress={500}>
+          <NoteCard note={note} onPress={onPress} />
+        </Pressable>
+      </Swipeable>
+
+      {/* Context Menu Modal */}
+      <Modal
+        visible={showMenu}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowMenu(false)}
+      >
+        <Pressable style={styles.menuOverlay} onPress={() => setShowMenu(false)}>
+          <View style={styles.menuContainer}>
+            <Text style={styles.menuTitle} numberOfLines={1}>{note.title}</Text>
+
+            <TouchableOpacity
+              style={styles.menuOption}
+              onPress={() => handleMenuOption('move')}
+            >
+              <Ionicons name="folder-outline" size={22} color={NotesColors.textPrimary} />
+              <Text style={styles.menuOptionText}>Move to Folder</Text>
+            </TouchableOpacity>
+
+            {onPin && (
+              <TouchableOpacity
+                style={styles.menuOption}
+                onPress={() => handleMenuOption('pin')}
+              >
+                <Ionicons name="pin-outline" size={22} color={NotesColors.textPrimary} />
+                <Text style={styles.menuOptionText}>Pin Note</Text>
+              </TouchableOpacity>
+            )}
+
+            <TouchableOpacity
+              style={styles.menuOption}
+              onPress={() => handleMenuOption('delete')}
+            >
+              <Ionicons name="trash-outline" size={22} color="#FF3B30" />
+              <Text style={[styles.menuOptionText, { color: '#FF3B30' }]}>Delete</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.menuCancelButton}
+              onPress={() => setShowMenu(false)}
+            >
+              <Text style={styles.menuCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </Pressable>
+      </Modal>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
-  deleteContainer: {
-    justifyContent: 'center',
-    alignItems: 'flex-end',
+  actionsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: 10,
+  },
+  moveButton: {
+    backgroundColor: NotesColors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: 75,
+    height: '100%',
+    borderTopLeftRadius: 12,
+    borderBottomLeftRadius: 12,
   },
   deleteButton: {
     backgroundColor: '#FF3B30',
     justifyContent: 'center',
     alignItems: 'center',
-    width: 80,
+    width: 75,
     height: '100%',
-    borderRadius: 12,
+    borderTopRightRadius: 12,
+    borderBottomRightRadius: 12,
   },
-  deleteText: {
+  actionText: {
     color: '#fff',
     fontSize: 12,
     fontWeight: '600',
@@ -149,21 +309,66 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 10,
   },
-  checkbox: {
+  minusButton: {
+    marginRight: 8,
+    zIndex: 1,
+  },
+  minusCircle: {
     width: 24,
     height: 24,
     borderRadius: 12,
-    borderWidth: 2,
-    borderColor: NotesColors.textSecondary,
+    backgroundColor: '#FF3B30',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
-  },
-  checkboxSelected: {
-    backgroundColor: NotesColors.primary,
-    borderColor: NotesColors.primary,
   },
   cardWrapper: {
     flex: 1,
+  },
+  // Context Menu styles
+  menuOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 40,
+  },
+  menuContainer: {
+    width: '100%',
+    backgroundColor: NotesColors.card,
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  menuTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: NotesColors.textSecondary,
+    textAlign: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: NotesColors.textSecondary,
+  },
+  menuOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    gap: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  menuOptionText: {
+    fontSize: 17,
+    color: NotesColors.textPrimary,
+  },
+  menuCancelButton: {
+    paddingVertical: 16,
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+  },
+  menuCancelText: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: NotesColors.primary,
   },
 });

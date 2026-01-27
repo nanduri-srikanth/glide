@@ -20,12 +20,21 @@ class Folder(Base):
     color = Column(String(7), nullable=True)  # Hex color
     is_system = Column(Boolean, default=False)  # For "All Notes", "Recently Deleted"
     sort_order = Column(Integer, default=0)
+
+    # Nesting support
+    parent_id = Column(UUID(as_uuid=True), ForeignKey("folders.id", ondelete="CASCADE"), nullable=True, index=True)
+    depth = Column(Integer, default=0)  # 0 = root, 1 = child, 2 = grandchild (max)
+
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
     user = relationship("User", back_populates="folders")
     notes = relationship("Note", back_populates="folder", cascade="all, delete-orphan")
+
+    # Self-referential relationships for folder nesting
+    parent = relationship("Folder", remote_side=[id], back_populates="children")
+    children = relationship("Folder", back_populates="parent", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<Folder {self.name}>"

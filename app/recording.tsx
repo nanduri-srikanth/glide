@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
-import { StyleSheet, SafeAreaView, Alert, View, Text, ActivityIndicator } from 'react-native';
+import React, { useState, useRef } from 'react';
+import { StyleSheet, SafeAreaView, Alert, View, Text, ActivityIndicator, Animated } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { NotesColors } from '@/constants/theme';
 import { RecordingOverlay } from '@/components/notes/RecordingOverlay';
 import { FolderSelectionSheet } from '@/components/notes/FolderSelectionSheet';
@@ -14,7 +15,7 @@ export default function RecordingScreen() {
   const router = useRouter();
   const { folderId } = useLocalSearchParams<{ folderId?: string }>();
   const { isAuthenticated } = useAuth();
-  const { refreshAll } = useNotes();
+  const { fetchFolders } = useNotes();
   const {
     isRecording,
     isPaused,
@@ -39,6 +40,62 @@ export default function RecordingScreen() {
   const [pendingNotes, setPendingNotes] = useState('');
   const [sheetProcessing, setSheetProcessing] = useState(false);
   const [sheetProcessingStatus, setSheetProcessingStatus] = useState('');
+  const [showSuccess, setShowSuccess] = useState(false);
+  const [successMessage, setSuccessMessage] = useState('');
+
+  // Animation values for success screen
+  const successScale = useRef(new Animated.Value(0)).current;
+  const successOpacity = useRef(new Animated.Value(0)).current;
+
+  // Success animation and navigation
+  const showSuccessAndNavigateBack = (message: string) => {
+    // Clear all processing states first
+    setShowProcessing(false);
+    setSheetProcessing(false);
+    setShowFolderSheet(false);
+
+    // Reset animation values
+    successScale.setValue(0);
+    successOpacity.setValue(0);
+
+    // Then show success
+    setSuccessMessage(message);
+    setShowSuccess(true);
+
+    // Animate in
+    Animated.parallel([
+      Animated.spring(successScale, {
+        toValue: 1,
+        useNativeDriver: true,
+        tension: 50,
+        friction: 7,
+      }),
+      Animated.timing(successOpacity, {
+        toValue: 1,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+    ]).start();
+
+    // Navigate back after delay
+    setTimeout(() => {
+      Animated.parallel([
+        Animated.timing(successScale, {
+          toValue: 0.8,
+          duration: 150,
+          useNativeDriver: true,
+        }),
+        Animated.timing(successOpacity, {
+          toValue: 0,
+          duration: 150,
+          useNativeDriver: true,
+        }),
+      ]).start(() => {
+        resetState();
+        router.back();
+      });
+    }, 1200);
+  };
 
   const handleStartRecording = async () => {
     await startRecording();
@@ -75,26 +132,16 @@ export default function RecordingScreen() {
     if (folderId) {
       setShowProcessing(true);
       const result = await processRecording(folderId, notes || userNotes);
-      setShowProcessing(false);
 
       if (result) {
-        await refreshAll();
-        Alert.alert(
-          'Note Created',
-          `Your voice memo has been transcribed and processed. ${result.actions_count} actions were identified.`,
-          [
-            {
-              text: 'View Note',
-              onPress: () => {
-                resetState();
-                router.replace(`/notes/detail/${result.note_id}`);
-              },
-            },
-          ]
-        );
-      } else if (error) {
-        Alert.alert('Processing Failed', error, [
-          { text: 'Try Again', onPress: () => setShowProcessing(false) },
+        // Success - show animation and go back
+        fetchFolders();
+        showSuccessAndNavigateBack('Note saved');
+      } else {
+        // Error occurred
+        setShowProcessing(false);
+        Alert.alert('Processing Failed', error || 'Unknown error', [
+          { text: 'Try Again' },
           { text: 'Discard', style: 'destructive', onPress: () => router.back() },
         ]);
       }
@@ -123,7 +170,7 @@ export default function RecordingScreen() {
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Create & Save',
-          onPress: async (name) => {
+          onPress: async (name: string | undefined) => {
             if (name?.trim()) {
               setSheetProcessing(true);
               setSheetProcessingStatus('Creating folder...');
@@ -177,12 +224,9 @@ export default function RecordingScreen() {
           return;
         }
 
-        if (data) {
-          await refreshAll();
-          setShowFolderSheet(false);
-          resetState();
-          router.replace(`/notes/detail/${data.note_id}`);
-        }
+        // Success - show animation and go back
+        fetchFolders();
+        showSuccessAndNavigateBack('Note saved');
       } else if (pendingNotes.trim()) {
         const firstLine = pendingNotes.split('\n')[0].trim();
         const title = firstLine.length > 50 ? firstLine.slice(0, 50) + '...' : firstLine;
@@ -199,12 +243,9 @@ export default function RecordingScreen() {
           return;
         }
 
-        if (data) {
-          await refreshAll();
-          setShowFolderSheet(false);
-          resetState();
-          router.replace(`/notes/detail/${data.id}`);
-        }
+        // Success - show animation and go back
+        fetchFolders();
+        showSuccessAndNavigateBack('Note saved');
       }
     } catch (err) {
       Alert.alert('Error', 'Failed to process note.');
@@ -241,32 +282,18 @@ export default function RecordingScreen() {
           folder_id: folderId,
         });
 
-        setShowProcessing(false);
-
         if (apiError) {
+          setShowProcessing(false);
           Alert.alert('Error', apiError, [
-            { text: 'Try Again', onPress: () => {} },
+            { text: 'Try Again' },
             { text: 'Discard', style: 'destructive', onPress: () => router.back() },
           ]);
           return;
         }
 
-        if (data) {
-          await refreshAll();
-          Alert.alert(
-            'Note Created',
-            'Your note has been saved.',
-            [
-              {
-                text: 'View Note',
-                onPress: () => {
-                  resetState();
-                  router.replace(`/notes/detail/${data.id}`);
-                },
-              },
-            ]
-          );
-        }
+        // Success - show animation and go back
+        fetchFolders();
+        showSuccessAndNavigateBack('Note saved');
       } catch (err) {
         setShowProcessing(false);
         Alert.alert('Error', 'Failed to create note. Please try again.');
@@ -326,6 +353,35 @@ export default function RecordingScreen() {
     return `${secs}s`;
   };
 
+  // Success screen with animation
+  if (showSuccess) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.successContainer}>
+          <Animated.View
+            style={[
+              styles.successCircle,
+              {
+                opacity: successOpacity,
+                transform: [{ scale: successScale }],
+              },
+            ]}
+          >
+            <Ionicons name="checkmark" size={48} color="#FFFFFF" />
+          </Animated.View>
+          <Animated.Text
+            style={[
+              styles.successText,
+              { opacity: successOpacity },
+            ]}
+          >
+            {successMessage}
+          </Animated.Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   if (showProcessing || isProcessing) {
     const hasAudio = duration > 0;
     return (
@@ -383,6 +439,31 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: NotesColors.background,
+  },
+  successContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 32,
+  },
+  successCircle: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: '#34C759',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 24,
+    shadowColor: '#34C759',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  successText: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: NotesColors.textPrimary,
   },
   processingContainer: {
     flex: 1,

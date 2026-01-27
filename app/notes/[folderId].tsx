@@ -19,6 +19,7 @@ import { getNotesByFolder } from '@/data/mockNotes';
 import { SwipeableNoteCard } from '@/components/notes/SwipeableNoteCard';
 import { SearchBar } from '@/components/notes/SearchBar';
 import { ComposeButton } from '@/components/notes/ComposeButton';
+import { MoveFolderSheet } from '@/components/notes/MoveFolderSheet';
 import { Note } from '@/data/types';
 import { useNotes } from '@/context/NotesContext';
 import { useAuth } from '@/context/AuthContext';
@@ -32,29 +33,40 @@ export default function NoteListScreen() {
   const { folderId } = useLocalSearchParams<{ folderId: string }>();
   const router = useRouter();
   const { isAuthenticated } = useAuth();
-  const { notes: apiNotes, folders, isLoading, error, fetchNotes, searchNotes, deleteNote } = useNotes();
+  const { notes: apiNotes, folders, isLoading, error, fetchNotes, searchNotes, deleteNote, moveNote } = useNotes();
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isEditMode, setIsEditMode] = useState(false);
   const [selectedNotes, setSelectedNotes] = useState<Set<string>>(new Set());
+  const [showMoveSheet, setShowMoveSheet] = useState(false);
+  const [noteToMove, setNoteToMove] = useState<string | null>(null);
+  const [isMoving, setIsMoving] = useState(false);
 
-  const folder = folders.find((f) => f.id === folderId) || mockFolders.find((f) => f.id === folderId);
+  const apiFolder = folders.find((f) => f.id === folderId);
+  const mockFolder = mockFolders.find((f) => f.id === folderId);
+  const folder = apiFolder || mockFolder;
   const isAllNotesFolder = folder?.name === 'All Notes';
+  const isRealFolder = !!apiFolder; // Only true if folder exists in API response
 
   useEffect(() => {
     if (isAuthenticated && folderId) {
       // For "All Notes" folder, fetch all notes without folder filter
       if (isAllNotesFolder) {
         fetchNotes(undefined);
-      } else {
+      } else if (isRealFolder) {
+        // Only fetch with folder filter if it's a real API folder (valid UUID)
         fetchNotes(folderId);
+      } else {
+        // Mock folder - fetch all notes since we can't filter by mock ID
+        fetchNotes(undefined);
       }
     }
-  }, [isAuthenticated, folderId, isAllNotesFolder, fetchNotes]);
+  }, [isAuthenticated, folderId, isAllNotesFolder, isRealFolder, fetchNotes]);
 
-  // Use API notes if available, otherwise fall back to mock data
+  // Use API notes - only fall back to mock data if not authenticated
   const notes: Note[] = useMemo(() => {
-    if (apiNotes.length > 0) {
+    if (isAuthenticated) {
+      // When authenticated, always use API notes (even if empty)
       return apiNotes.map(n => ({
         id: n.id,
         title: n.title,
@@ -62,17 +74,18 @@ export default function NoteListScreen() {
         transcript: n.preview || '',
         duration: n.duration || 0,
         actions: {
-          calendar: n.has_calendar_actions ? [{ id: '1', title: 'Event', date: '', time: '' }] : [],
-          email: n.has_email_actions ? [{ id: '1', to: '', subject: '', status: 'draft' as const }] : [],
-          reminders: n.has_reminder_actions ? [{ id: '1', title: 'Reminder', dueDate: '' }] : [],
+          calendar: n.calendar_count > 0 ? [{ id: '1', title: 'Event', date: '', time: '' }] : [],
+          email: n.email_count > 0 ? [{ id: '1', to: '', subject: '', status: 'draft' as const }] : [],
+          reminders: n.reminder_count > 0 ? [{ id: '1', title: 'Reminder', dueDate: '' }] : [],
           nextSteps: [],
         },
-        folderId: folderId || '',
+        folderId: n.folder_id || folderId || '',
         tags: n.tags || [],
       }));
     }
+    // Only use mock data when not authenticated
     return getNotesByFolder(folderId || '');
-  }, [apiNotes, folderId]);
+  }, [apiNotes, folderId, isAuthenticated]);
 
   const filteredNotes = useMemo(() => {
     if (!searchQuery) return notes;
@@ -160,6 +173,30 @@ export default function NoteListScreen() {
     }
   }, [deleteNote, isAuthenticated, folderId, isAllNotesFolder, fetchNotes]);
 
+  const handleMoveNote = useCallback((noteId: string) => {
+    setNoteToMove(noteId);
+    setShowMoveSheet(true);
+  }, []);
+
+  const handleSelectMoveFolder = useCallback(async (targetFolderId: string) => {
+    if (!noteToMove) return;
+
+    setIsMoving(true);
+    const success = await moveNote(noteToMove, targetFolderId);
+    setIsMoving(false);
+
+    if (success) {
+      setShowMoveSheet(false);
+      setNoteToMove(null);
+      // Refresh the current list
+      if (isAuthenticated && folderId) {
+        await fetchNotes(isAllNotesFolder ? undefined : folderId);
+      }
+    } else {
+      Alert.alert('Error', 'Failed to move note. Please try again.');
+    }
+  }, [noteToMove, moveNote, isAuthenticated, folderId, isAllNotesFolder, fetchNotes]);
+
   const handleSelectNote = useCallback((noteId: string) => {
     setSelectedNotes(prev => {
       const newSet = new Set(prev);
@@ -214,6 +251,7 @@ export default function NoteListScreen() {
       note={item}
       onPress={() => handleNotePress(item)}
       onDelete={handleDeleteNote}
+      onMove={handleMoveNote}
       isEditMode={isEditMode}
       isSelected={selectedNotes.has(item.id)}
       onSelect={handleSelectNote}
@@ -274,7 +312,7 @@ export default function NoteListScreen() {
               {isLoading ? (
                 <ActivityIndicator size="large" color={NotesColors.primary} />
               ) : (
-                <Text style={styles.emptyText}>{error || 'No notes found'}</Text>
+                <Text style={styles.emptyText}>{typeof error === 'string' ? error : 'No notes found'}</Text>
               )}
             </View>
           }
@@ -302,6 +340,17 @@ export default function NoteListScreen() {
             <ComposeButton onPress={handleComposePress} />
           </>
         )}
+
+        <MoveFolderSheet
+          visible={showMoveSheet}
+          currentFolderId={folderId}
+          onSelectFolder={handleSelectMoveFolder}
+          onClose={() => {
+            setShowMoveSheet(false);
+            setNoteToMove(null);
+          }}
+          isProcessing={isMoving}
+        />
       </SafeAreaView>
     </GestureHandlerRootView>
   );

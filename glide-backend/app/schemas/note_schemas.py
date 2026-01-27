@@ -12,6 +12,7 @@ class FolderCreate(BaseModel):
     name: str = Field(..., max_length=255)
     icon: str = Field(default="folder.fill", max_length=50)
     color: Optional[str] = Field(None, pattern=r"^#[0-9A-Fa-f]{6}$")
+    parent_id: Optional[UUID] = None
 
 
 class FolderUpdate(BaseModel):
@@ -20,6 +21,7 @@ class FolderUpdate(BaseModel):
     icon: Optional[str] = Field(None, max_length=50)
     color: Optional[str] = Field(None, pattern=r"^#[0-9A-Fa-f]{6}$")
     sort_order: Optional[int] = None
+    parent_id: Optional[UUID] = None
 
 
 class FolderResponse(BaseModel):
@@ -30,9 +32,25 @@ class FolderResponse(BaseModel):
     color: Optional[str]
     is_system: bool
     note_count: int = 0
+    sort_order: int = 0
+    parent_id: Optional[UUID] = None
+    depth: int = 0
+    children: List["FolderResponse"] = []
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class FolderReorderItem(BaseModel):
+    """Schema for a single folder reorder item."""
+    id: UUID
+    sort_order: int
+    parent_id: Optional[UUID] = None
+
+
+class FolderBulkReorder(BaseModel):
+    """Schema for bulk folder reorder."""
+    folders: List[FolderReorderItem]
 
 
 class NoteCreate(BaseModel):
@@ -112,3 +130,7 @@ class NoteSearchParams(BaseModel):
     end_date: Optional[datetime] = None
     page: int = Field(default=1, ge=1)
     per_page: int = Field(default=20, ge=1, le=100)
+
+
+# Resolve forward references for recursive FolderResponse
+FolderResponse.model_rebuild()

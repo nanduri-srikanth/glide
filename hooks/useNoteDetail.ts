@@ -6,8 +6,10 @@ import { useState, useEffect, useCallback } from 'react';
 import { notesService, NoteDetailResponse } from '@/services/notes';
 import { actionsService, ActionExecuteResponse } from '@/services/actions';
 import { Note } from '@/data/types';
+import { useNotes } from '@/context/NotesContext';
 
 export function useNoteDetail(noteId: string | undefined) {
+  const { getCachedNote, clearCachedNote } = useNotes();
   const [rawNote, setRawNote] = useState<NoteDetailResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -15,6 +17,20 @@ export function useNoteDetail(noteId: string | undefined) {
   const fetchNote = useCallback(async () => {
     if (!noteId) {
       setIsLoading(false);
+      return;
+    }
+
+    // Check cache first for instant display
+    const cached = getCachedNote(noteId);
+    if (cached) {
+      setRawNote(cached);
+      setIsLoading(false);
+      // Still fetch from API in background to get full data (e.g., actions)
+      const { data } = await notesService.getNote(noteId);
+      if (data) {
+        setRawNote(data);
+        clearCachedNote(noteId);
+      }
       return;
     }
 
@@ -26,7 +42,7 @@ export function useNoteDetail(noteId: string | undefined) {
     else if (data) setRawNote(data);
 
     setIsLoading(false);
-  }, [noteId]);
+  }, [noteId, getCachedNote, clearCachedNote]);
 
   useEffect(() => {
     fetchNote();
