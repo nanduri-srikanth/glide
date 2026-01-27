@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { StyleSheet, View, Text, SafeAreaView, RefreshControl, ActivityIndicator, TouchableOpacity, Alert, ScrollView } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { NotesColors } from '@/constants/theme';
 import { DraggableFolderList } from '@/components/notes/DraggableFolderList';
@@ -31,9 +31,12 @@ export default function FoldersScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
 
-  useEffect(() => {
-    if (isAuthenticated) fetchFolders();
-  }, [isAuthenticated, fetchFolders]);
+  // Refresh folders when screen gains focus (after creating a note, etc.)
+  useFocusEffect(
+    useCallback(() => {
+      if (isAuthenticated) fetchFolders();
+    }, [isAuthenticated, fetchFolders])
+  );
 
   // Helper to convert API folder to display format
   const convertFolder = useCallback((f: any): Folder => ({

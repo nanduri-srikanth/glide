@@ -2,15 +2,11 @@
 import uuid
 from datetime import datetime
 from enum import Enum
-from sqlalchemy import Column, String, Boolean, DateTime, Text, ForeignKey, Enum as SQLEnum, JSON
+from sqlalchemy import Column, String, Boolean, DateTime, Text, ForeignKey, Enum as SQLEnum
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 
 from app.database import Base
-
-
-def generate_uuid():
-    """Generate UUID as string for database compatibility."""
-    return str(uuid.uuid4())
 
 
 class ActionType(str, Enum):
@@ -42,8 +38,8 @@ class Action(Base):
 
     __tablename__ = "actions"
 
-    id = Column(String(36), primary_key=True, default=generate_uuid)
-    note_id = Column(String(36), ForeignKey("notes.id", ondelete="CASCADE"), nullable=False, index=True)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    note_id = Column(UUID(as_uuid=True), ForeignKey("notes.id", ondelete="CASCADE"), nullable=False, index=True)
 
     # Action details
     action_type = Column(SQLEnum(ActionType), nullable=False, index=True)
@@ -53,13 +49,13 @@ class Action(Base):
     # Content
     title = Column(String(500), nullable=False)
     description = Column(Text, nullable=True)
-    details = Column(JSON, default={})  # Flexible storage for action-specific data
+    details = Column(JSONB, default={})  # Flexible storage for action-specific data
 
     # Scheduling (for calendar/reminders)
     scheduled_date = Column(DateTime, nullable=True, index=True)
     scheduled_end_date = Column(DateTime, nullable=True)
     location = Column(String(500), nullable=True)
-    attendees = Column(JSON, default=[])  # List of attendees
+    attendees = Column(JSONB, default=[])  # List of attendees
 
     # Email specific
     email_to = Column(String(500), nullable=True)

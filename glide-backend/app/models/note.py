@@ -1,15 +1,11 @@
 """Note and Folder models."""
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, String, Integer, Boolean, DateTime, Text, ForeignKey, JSON
+from sqlalchemy import Column, String, Integer, Boolean, DateTime, Text, ForeignKey
+from sqlalchemy.dialects.postgresql import UUID, ARRAY, JSONB
 from sqlalchemy.orm import relationship
 
 from app.database import Base
-
-
-def generate_uuid():
-    """Generate UUID as string for database compatibility."""
-    return str(uuid.uuid4())
 
 
 class Folder(Base):
@@ -17,8 +13,8 @@ class Folder(Base):
 
     __tablename__ = "folders"
 
-    id = Column(String(36), primary_key=True, default=generate_uuid)
-    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     name = Column(String(255), nullable=False)
     icon = Column(String(50), default="folder.fill")
     color = Column(String(7), nullable=True)  # Hex color
@@ -26,7 +22,7 @@ class Folder(Base):
     sort_order = Column(Integer, default=0)
 
     # Nesting support
-    parent_id = Column(String(36), ForeignKey("folders.id", ondelete="CASCADE"), nullable=True, index=True)
+    parent_id = Column(UUID(as_uuid=True), ForeignKey("folders.id", ondelete="CASCADE"), nullable=True, index=True)
     depth = Column(Integer, default=0)  # 0 = root, 1 = child, 2 = grandchild (max)
 
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -49,9 +45,9 @@ class Note(Base):
 
     __tablename__ = "notes"
 
-    id = Column(String(36), primary_key=True, default=generate_uuid)
-    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    folder_id = Column(String(36), ForeignKey("folders.id", ondelete="SET NULL"), nullable=True, index=True)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    folder_id = Column(UUID(as_uuid=True), ForeignKey("folders.id", ondelete="SET NULL"), nullable=True, index=True)
 
     # Content
     title = Column(String(500), nullable=False)
@@ -63,8 +59,8 @@ class Note(Base):
     audio_url = Column(String(500), nullable=True)  # S3/storage URL
     audio_format = Column(String(20), nullable=True)  # mp3, m4a, wav
 
-    # Organization (JSON for SQLite compatibility)
-    tags = Column(JSON, default=[])
+    # Organization
+    tags = Column(ARRAY(String), default=[])
     is_pinned = Column(Boolean, default=False)
     is_archived = Column(Boolean, default=False)
     is_deleted = Column(Boolean, default=False)
@@ -72,7 +68,7 @@ class Note(Base):
 
     # AI processing metadata
     ai_processed = Column(Boolean, default=False)
-    ai_metadata = Column(JSON, default={})  # Store AI processing details
+    ai_metadata = Column(JSONB, default={})  # Store AI processing details
 
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, index=True)

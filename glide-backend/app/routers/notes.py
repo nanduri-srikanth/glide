@@ -240,13 +240,30 @@ async def create_note(
         title=note_data.title,
         transcript=note_data.transcript,
         folder_id=note_data.folder_id,
-        tags=note_data.tags,
+        tags=note_data.tags or [],
     )
     db.add(note)
     await db.commit()
     await db.refresh(note)
 
-    return note
+    # Return response without lazy-loading actions (new note has no actions)
+    return NoteResponse(
+        id=note.id,
+        title=note.title,
+        transcript=note.transcript,
+        summary=note.summary,
+        duration=note.duration,
+        audio_url=note.audio_url,
+        folder_id=note.folder_id,
+        folder_name=None,
+        tags=note.tags or [],
+        is_pinned=note.is_pinned,
+        is_archived=note.is_archived,
+        ai_processed=note.ai_processed,
+        actions=[],
+        created_at=note.created_at,
+        updated_at=note.updated_at,
+    )
 
 
 @router.patch("/{note_id}", response_model=NoteResponse)
@@ -291,9 +308,19 @@ async def update_note(
 
     note.updated_at = datetime.utcnow()
     await db.commit()
-    await db.refresh(note)
 
-    return note
+    # Re-fetch with relationships loaded
+    result = await db.execute(
+        select(Note)
+        .options(selectinload(Note.actions), selectinload(Note.folder))
+        .where(Note.id == note.id)
+    )
+    note = result.scalar_one()
+
+    response = NoteResponse.model_validate(note)
+    if note.folder:
+        response.folder_name = note.folder.name
+    return response
 
 
 @router.delete("/{note_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -351,6 +378,16 @@ async def restore_note(
     note.deleted_at = None
     note.updated_at = datetime.utcnow()
     await db.commit()
-    await db.refresh(note)
 
-    return note
+    # Re-fetch with relationships loaded
+    result = await db.execute(
+        select(Note)
+        .options(selectinload(Note.actions), selectinload(Note.folder))
+        .where(Note.id == note.id)
+    )
+    note = result.scalar_one()
+
+    response = NoteResponse.model_validate(note)
+    if note.folder:
+        response.folder_name = note.folder.name
+    return response

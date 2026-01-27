@@ -188,9 +188,20 @@ async def create_folder(
     await db.commit()
     await db.refresh(folder)
 
-    response = FolderResponse.model_validate(folder)
-    response.note_count = 0
-    return response
+    # Return response without lazy-loading children (new folder has no children)
+    return FolderResponse(
+        id=folder.id,
+        name=folder.name,
+        icon=folder.icon,
+        color=folder.color,
+        is_system=folder.is_system,
+        note_count=0,
+        sort_order=folder.sort_order,
+        parent_id=folder.parent_id,
+        depth=folder.depth,
+        children=[],
+        created_at=folder.created_at,
+    )
 
 
 async def get_folder_max_child_depth(db: AsyncSession, folder_id: UUID) -> int:
@@ -335,7 +346,28 @@ async def update_folder(
     await db.commit()
     await db.refresh(folder)
 
-    return FolderResponse.model_validate(folder)
+    # Get note count for response
+    count_result = await db.execute(
+        select(func.count(Note.id))
+        .where(Note.folder_id == folder_id)
+        .where(Note.is_deleted == False)
+    )
+    note_count = count_result.scalar() or 0
+
+    # Return response without lazy-loading children
+    return FolderResponse(
+        id=folder.id,
+        name=folder.name,
+        icon=folder.icon,
+        color=folder.color,
+        is_system=folder.is_system,
+        note_count=note_count,
+        sort_order=folder.sort_order,
+        parent_id=folder.parent_id,
+        depth=folder.depth,
+        children=[],
+        created_at=folder.created_at,
+    )
 
 
 @router.post("/reorder")

@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect, useCallback } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import {
   StyleSheet,
   View,
@@ -11,7 +11,7 @@ import {
   Alert,
 } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
+import { useLocalSearchParams, useRouter, Stack, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { NotesColors } from '@/constants/theme';
 import { mockFolders } from '@/data/mockFolders';
@@ -48,20 +48,23 @@ export default function NoteListScreen() {
   const isAllNotesFolder = folder?.name === 'All Notes';
   const isRealFolder = !!apiFolder; // Only true if folder exists in API response
 
-  useEffect(() => {
-    if (isAuthenticated && folderId) {
-      // For "All Notes" folder, fetch all notes without folder filter
-      if (isAllNotesFolder) {
-        fetchNotes(undefined);
-      } else if (isRealFolder) {
-        // Only fetch with folder filter if it's a real API folder (valid UUID)
-        fetchNotes(folderId);
-      } else {
-        // Mock folder - fetch all notes since we can't filter by mock ID
-        fetchNotes(undefined);
+  // Refresh notes when screen gains focus (after creating a new note, etc.)
+  useFocusEffect(
+    useCallback(() => {
+      if (isAuthenticated && folderId) {
+        // For "All Notes" folder, fetch all notes without folder filter
+        if (isAllNotesFolder) {
+          fetchNotes(undefined);
+        } else if (isRealFolder) {
+          // Only fetch with folder filter if it's a real API folder (valid UUID)
+          fetchNotes(folderId);
+        } else {
+          // Mock folder - fetch all notes since we can't filter by mock ID
+          fetchNotes(undefined);
+        }
       }
-    }
-  }, [isAuthenticated, folderId, isAllNotesFolder, isRealFolder, fetchNotes]);
+    }, [isAuthenticated, folderId, isAllNotesFolder, isRealFolder, fetchNotes])
+  );
 
   // Use API notes - only fall back to mock data if not authenticated
   const notes: Note[] = useMemo(() => {
