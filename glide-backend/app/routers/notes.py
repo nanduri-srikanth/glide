@@ -118,6 +118,74 @@ async def list_notes(
     )
 
 
+@router.get("/search", response_model=NoteListResponse)
+async def search_notes(
+    q: str,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: AsyncSession = Depends(get_db),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(20, ge=1, le=100),
+):
+    """Full-text search notes."""
+    search_term = f"%{q}%"
+
+    query = (
+        select(Note)
+        .where(Note.user_id == current_user.id)
+        .where(Note.is_deleted == False)
+        .where(
+            or_(
+                Note.title.ilike(search_term),
+                Note.transcript.ilike(search_term),
+                Note.tags.overlap([q]),
+            )
+        )
+    )
+
+    # Get total count
+    count_query = select(func.count()).select_from(query.subquery())
+    total_result = await db.execute(count_query)
+    total = total_result.scalar() or 0
+
+    # Apply pagination
+    query = (
+        query
+        .options(selectinload(Note.actions))
+        .order_by(Note.created_at.desc())
+        .offset((page - 1) * per_page)
+        .limit(per_page)
+    )
+
+    result = await db.execute(query)
+    notes = result.scalars().all()
+
+    items = [
+        NoteListItem(
+            id=note.id,
+            title=note.title,
+            preview=note.transcript[:100] if note.transcript else "",
+            duration=note.duration,
+            folder_id=note.folder_id,
+            tags=note.tags or [],
+            is_pinned=note.is_pinned,
+            action_count=len(note.actions),
+            calendar_count=sum(1 for a in note.actions if a.action_type == ActionType.CALENDAR),
+            email_count=sum(1 for a in note.actions if a.action_type == ActionType.EMAIL),
+            reminder_count=sum(1 for a in note.actions if a.action_type == ActionType.REMINDER),
+            created_at=note.created_at,
+        )
+        for note in notes
+    ]
+
+    return NoteListResponse(
+        items=items,
+        total=total,
+        page=page,
+        per_page=per_page,
+        pages=(total + per_page - 1) // per_page,
+    )
+
+
 @router.get("/{note_id}", response_model=NoteResponse)
 async def get_note(
     note_id: UUID,
@@ -286,71 +354,3 @@ async def restore_note(
     await db.refresh(note)
 
     return note
-
-
-@router.get("/search", response_model=NoteListResponse)
-async def search_notes(
-    q: str,
-    current_user: Annotated[User, Depends(get_current_user)],
-    db: AsyncSession = Depends(get_db),
-    page: int = Query(1, ge=1),
-    per_page: int = Query(20, ge=1, le=100),
-):
-    """Full-text search notes."""
-    search_term = f"%{q}%"
-
-    query = (
-        select(Note)
-        .where(Note.user_id == current_user.id)
-        .where(Note.is_deleted == False)
-        .where(
-            or_(
-                Note.title.ilike(search_term),
-                Note.transcript.ilike(search_term),
-                Note.tags.overlap([q]),
-            )
-        )
-    )
-
-    # Get total count
-    count_query = select(func.count()).select_from(query.subquery())
-    total_result = await db.execute(count_query)
-    total = total_result.scalar() or 0
-
-    # Apply pagination
-    query = (
-        query
-        .options(selectinload(Note.actions))
-        .order_by(Note.created_at.desc())
-        .offset((page - 1) * per_page)
-        .limit(per_page)
-    )
-
-    result = await db.execute(query)
-    notes = result.scalars().all()
-
-    items = [
-        NoteListItem(
-            id=note.id,
-            title=note.title,
-            preview=note.transcript[:100],
-            duration=note.duration,
-            folder_id=note.folder_id,
-            tags=note.tags or [],
-            is_pinned=note.is_pinned,
-            action_count=len(note.actions),
-            calendar_count=sum(1 for a in note.actions if a.action_type == ActionType.CALENDAR),
-            email_count=sum(1 for a in note.actions if a.action_type == ActionType.EMAIL),
-            reminder_count=sum(1 for a in note.actions if a.action_type == ActionType.REMINDER),
-            created_at=note.created_at,
-        )
-        for note in notes
-    ]
-
-    return NoteListResponse(
-        items=items,
-        total=total,
-        page=page,
-        per_page=per_page,
-        pages=(total + per_page - 1) // per_page,
-    )

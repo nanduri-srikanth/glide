@@ -31,9 +31,10 @@ class ApiService {
   private accessToken: string | null = null;
   private refreshToken: string | null = null;
   private refreshPromise: Promise<boolean> | null = null;
+  private tokensLoadedPromise: Promise<void>;
 
   constructor() {
-    this.loadTokens();
+    this.tokensLoadedPromise = this.loadTokens();
   }
 
   private async loadTokens(): Promise<void> {
@@ -43,6 +44,10 @@ class ApiService {
     } catch (error) {
       console.error('Failed to load tokens:', error);
     }
+  }
+
+  async ensureTokensLoaded(): Promise<void> {
+    await this.tokensLoadedPromise;
   }
 
   async saveTokens(accessToken: string, refreshToken: string): Promise<void> {
@@ -101,6 +106,7 @@ class ApiService {
   }
 
   async request<T>(endpoint: string, options: RequestInit = {}): Promise<ApiResponse<T>> {
+    await this.tokensLoadedPromise;
     const url = `${API_BASE_URL}${endpoint}`;
     const headers: HeadersInit = { ...options.headers };
 
@@ -172,14 +178,24 @@ class ApiService {
   }
 
   async postFormData<T>(endpoint: string, formData: FormData): Promise<ApiResponse<T>> {
+    await this.tokensLoadedPromise;
     const url = `${API_BASE_URL}${endpoint}`;
-    const headers: HeadersInit = {};
+    const headers: Record<string, string> = {};
     if (this.accessToken) {
       headers['Authorization'] = `Bearer ${this.accessToken}`;
     }
 
     try {
-      const response = await fetch(url, { method: 'POST', headers, body: formData });
+      let response = await fetch(url, { method: 'POST', headers, body: formData });
+
+      // Handle 401 with token refresh
+      if (response.status === 401 && this.refreshToken) {
+        const refreshed = await this.refreshAccessToken();
+        if (refreshed) {
+          headers['Authorization'] = `Bearer ${this.accessToken}`;
+          response = await fetch(url, { method: 'POST', headers, body: formData });
+        }
+      }
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
