@@ -1,7 +1,7 @@
 """LLM service using Anthropic Claude for action extraction."""
 import json
+from datetime import datetime
 from typing import Optional
-from anthropic import Anthropic
 
 from app.config import get_settings
 from app.schemas.voice_schemas import ActionExtractionResult
@@ -12,7 +12,11 @@ class LLMService:
 
     def __init__(self):
         settings = get_settings()
-        self.client = Anthropic(api_key=settings.anthropic_api_key)
+        self.api_key = settings.anthropic_api_key
+        self.client = None
+        if self.api_key:
+            from anthropic import Anthropic
+            self.client = Anthropic(api_key=self.api_key)
 
     async def extract_actions(
         self,
@@ -29,6 +33,10 @@ class LLMService:
         Returns:
             ActionExtractionResult with structured actions
         """
+        # Return mock response when API key not configured (local dev mode)
+        if not self.client:
+            return self._mock_extraction(transcript)
+
         context_str = ""
         if user_context:
             context_str = f"""
@@ -131,6 +139,28 @@ Rules:
             next_steps=data.get("next_steps", []),
         )
 
+    def _mock_extraction(self, transcript: str) -> ActionExtractionResult:
+        """Return mock extraction result for local dev (no API key)."""
+        # Generate a simple title from the transcript
+        words = transcript.split()[:10]
+        title = " ".join(words) + ("..." if len(transcript.split()) > 10 else "")
+        if not title.strip():
+            title = f"Voice Note - {datetime.utcnow().strftime('%b %d, %Y %I:%M %p')}"
+
+        # Create a summary from the first 200 chars
+        summary = transcript[:200] + ("..." if len(transcript) > 200 else "")
+
+        return ActionExtractionResult(
+            title=title,
+            folder="Personal",
+            tags=[],
+            summary=summary if summary.strip() else None,
+            calendar=[],
+            email=[],
+            reminders=[],
+            next_steps=[],
+        )
+
     async def generate_email_draft(
         self,
         context: str,
@@ -148,6 +178,13 @@ Rules:
         Returns:
             dict with subject and body
         """
+        # Return mock response when API key not configured
+        if not self.client:
+            return {
+                "subject": f"Re: {purpose}",
+                "body": f"[AI draft unavailable - connect Anthropic API]\n\nContext: {context[:200]}..."
+            }
+
         prompt = f"""Generate a professional email draft.
 
 Context from voice memo: {context}
@@ -187,6 +224,10 @@ Return ONLY valid JSON."""
         Returns:
             Summary string
         """
+        # Return mock response when API key not configured
+        if not self.client:
+            return transcript[:200] + ("..." if len(transcript) > 200 else "")
+
         prompt = f"""Summarize this voice memo in 2-3 sentences, focusing on key points and action items:
 
 {transcript}

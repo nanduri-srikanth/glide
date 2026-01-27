@@ -37,10 +37,17 @@ export interface LoginData {
   password: string;
 }
 
-// Use your machine's IP for physical devices, localhost for iOS simulator
-const DEV_API_HOST = '192.168.1.6';
+import { Platform } from 'react-native';
+
+// API Configuration - matches api.ts
+const getDevHost = () => {
+  if (Platform.OS === 'ios') return 'localhost';
+  if (Platform.OS === 'android') return '10.0.2.2';
+  return 'localhost';
+};
+
 const API_BASE_URL = __DEV__
-  ? `http://${DEV_API_HOST}:8000/api/v1`
+  ? `http://${getDevHost()}:8000/api/v1`
   : 'https://your-production-api.com/api/v1';
 
 class AuthService {

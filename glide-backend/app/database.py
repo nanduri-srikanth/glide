@@ -6,13 +6,23 @@ from app.config import get_settings
 
 settings = get_settings()
 
+# Engine configuration differs for SQLite vs PostgreSQL
+engine_kwargs = {
+    "echo": settings.debug,
+}
+
+# SQLite doesn't support connection pooling parameters
+if not settings.is_sqlite:
+    engine_kwargs.update({
+        "pool_pre_ping": True,
+        "pool_size": 5,
+        "max_overflow": 10,
+    })
+
 # Asynchronous engine (for API operations)
 async_engine = create_async_engine(
     settings.database_url_async,
-    pool_pre_ping=True,
-    pool_size=5,
-    max_overflow=10,
-    echo=settings.debug,
+    **engine_kwargs,
 )
 
 # Async session factory

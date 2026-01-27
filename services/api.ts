@@ -3,12 +3,24 @@
  */
 
 import * as SecureStore from 'expo-secure-store';
+import { Platform } from 'react-native';
 
 // API Configuration
-// Use your machine's IP for physical devices, localhost for iOS simulator
-const DEV_API_HOST = '192.168.1.6'; // Your local IP
+// For iOS Simulator: use localhost (maps to host machine)
+// For Android Emulator: use 10.0.2.2 (maps to host machine)
+// For Physical devices: use your machine's local IP
+const getDevHost = () => {
+  if (Platform.OS === 'ios') {
+    return 'localhost'; // iOS simulator
+  }
+  if (Platform.OS === 'android') {
+    return '10.0.2.2'; // Android emulator
+  }
+  return 'localhost'; // Web
+};
+
 const API_BASE_URL = __DEV__
-  ? `http://${DEV_API_HOST}:8000/api/v1`  // Development
+  ? `http://${getDevHost()}:8000/api/v1`  // Development
   : 'https://your-production-api.com/api/v1';  // Production
 
 // Token storage keys
