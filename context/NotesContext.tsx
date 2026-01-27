@@ -137,7 +137,7 @@ export function NotesProvider({ children }: { children: ReactNode }) {
   }, [fetchFolders]);
 
   const nestFolder = useCallback(async (folderId: string, parentId: string | null) => {
-    const { data, error: apiError } = await notesService.updateNote(folderId, { folder_id: parentId as string });
+    const { data, error: apiError } = await notesService.updateFolder(folderId, { parent_id: parentId });
     if (data) {
       await fetchFolders();
       return true;

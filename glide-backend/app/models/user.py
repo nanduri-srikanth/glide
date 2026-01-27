@@ -2,10 +2,14 @@
 import uuid
 from datetime import datetime
 from sqlalchemy import Column, String, Boolean, DateTime, Text
-from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
 from app.database import Base
+
+
+def generate_uuid():
+    """Generate UUID as string for database compatibility."""
+    return str(uuid.uuid4())
 
 
 class User(Base):
@@ -13,7 +17,7 @@ class User(Base):
 
     __tablename__ = "users"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(String(36), primary_key=True, default=generate_uuid)
     email = Column(String(255), unique=True, nullable=False, index=True)
     hashed_password = Column(String(255), nullable=False)
     full_name = Column(String(255), nullable=True)
@@ -31,7 +35,7 @@ class User(Base):
     apple_caldav_password = Column(Text, nullable=True)  # App-specific password
 
     # User preferences
-    default_folder_id = Column(UUID(as_uuid=True), nullable=True)
+    default_folder_id = Column(String(36), nullable=True)
     auto_transcribe = Column(Boolean, default=True)
     auto_create_actions = Column(Boolean, default=True)
     timezone = Column(String(50), default="America/Chicago")

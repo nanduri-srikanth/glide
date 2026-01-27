@@ -175,6 +175,12 @@ class NotesService {
     return { success: true };
   }
 
+  async updateFolder(folderId: string, data: { name?: string; icon?: string; color?: string; parent_id?: string | null; sort_order?: number }): Promise<{ data?: FolderResponse; error?: string }> {
+    const response = await api.patch<FolderResponse>(`/folders/${folderId}`, data);
+    if (response.error) return { error: response.error.message };
+    return { data: response.data };
+  }
+
   convertToNote(apiNote: NoteDetailResponse): Note {
     return {
       id: apiNote.id,

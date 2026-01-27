@@ -3,12 +3,24 @@
  */
 
 import * as SecureStore from 'expo-secure-store';
+import { Platform } from 'react-native';
 
 // API Configuration
-// Use your machine's IP for physical devices, localhost for iOS simulator
-const DEV_API_HOST = '192.168.1.6'; // Your local IP
-const API_BASE_URL = __DEV__
-  ? `http://${DEV_API_HOST}:8000/api/v1`  // Development
+// For iOS Simulator: use localhost (maps to host machine)
+// For Android Emulator: use 10.0.2.2 (maps to host machine)
+// For Physical devices: use your machine's local IP
+const getDevHost = () => {
+  if (Platform.OS === 'ios') {
+    return 'localhost'; // iOS simulator
+  }
+  if (Platform.OS === 'android') {
+    return '10.0.2.2'; // Android emulator
+  }
+  return 'localhost'; // Web
+};
+
+export const API_BASE_URL = __DEV__
+  ? `http://${getDevHost()}:8000/api/v1`  // Development
   : 'https://your-production-api.com/api/v1';  // Production
 
 // Token storage keys
@@ -31,9 +43,10 @@ class ApiService {
   private accessToken: string | null = null;
   private refreshToken: string | null = null;
   private refreshPromise: Promise<boolean> | null = null;
+  private tokensLoadedPromise: Promise<void>;
 
   constructor() {
-    this.loadTokens();
+    this.tokensLoadedPromise = this.loadTokens();
   }
 
   private async loadTokens(): Promise<void> {
@@ -43,6 +56,10 @@ class ApiService {
     } catch (error) {
       console.error('Failed to load tokens:', error);
     }
+  }
+
+  async ensureTokensLoaded(): Promise<void> {
+    await this.tokensLoadedPromise;
   }
 
   async saveTokens(accessToken: string, refreshToken: string): Promise<void> {
@@ -101,6 +118,7 @@ class ApiService {
   }
 
   async request<T>(endpoint: string, options: RequestInit = {}): Promise<ApiResponse<T>> {
+    await this.tokensLoadedPromise;
     const url = `${API_BASE_URL}${endpoint}`;
     const headers: HeadersInit = { ...options.headers };
 
@@ -172,14 +190,24 @@ class ApiService {
   }
 
   async postFormData<T>(endpoint: string, formData: FormData): Promise<ApiResponse<T>> {
+    await this.tokensLoadedPromise;
     const url = `${API_BASE_URL}${endpoint}`;
-    const headers: HeadersInit = {};
+    const headers: Record<string, string> = {};
     if (this.accessToken) {
       headers['Authorization'] = `Bearer ${this.accessToken}`;
     }
 
     try {
-      const response = await fetch(url, { method: 'POST', headers, body: formData });
+      let response = await fetch(url, { method: 'POST', headers, body: formData });
+
+      // Handle 401 with token refresh
+      if (response.status === 401 && this.refreshToken) {
+        const refreshed = await this.refreshAccessToken();
+        if (refreshed) {
+          headers['Authorization'] = `Bearer ${this.accessToken}`;
+          response = await fetch(url, { method: 'POST', headers, body: formData });
+        }
+      }
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));

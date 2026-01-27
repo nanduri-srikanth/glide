@@ -1,35 +1,36 @@
-"""Storage service for audio files using S3 or Supabase Storage."""
+"""Storage service for audio files using S3, Supabase, or local filesystem."""
 import os
 import uuid
 from datetime import datetime
-from typing import BinaryIO, Optional
-
-import boto3
-from botocore.exceptions import ClientError
+from typing import BinaryIO
 
 from app.config import get_settings
 
 
 class StorageService:
-    """Service for file storage (S3 compatible - works with Supabase Storage)."""
+    """Service for file storage (S3, Supabase, or local filesystem)."""
 
     def __init__(self):
-        settings = get_settings()
-        self.bucket_name = settings.s3_bucket_name
+        self.settings = get_settings()
+        self.use_local = self.settings.use_local_storage
+        self.local_path = self.settings.local_storage_path
 
-        # Initialize S3 client
-        # For Supabase Storage, use their S3-compatible endpoint
-        self.s3_client = boto3.client(
-            's3',
-            aws_access_key_id=settings.aws_access_key_id,
-            aws_secret_access_key=settings.aws_secret_access_key,
-            region_name=settings.aws_region,
-            # Uncomment for Supabase Storage:
-            # endpoint_url='https://YOUR_PROJECT.supabase.co/storage/v1/s3'
-        )
+        if not self.use_local:
+            # Initialize S3 client only when using cloud storage
+            import boto3
+            self.s3_client = boto3.client(
+                's3',
+                aws_access_key_id=self.settings.aws_access_key_id,
+                aws_secret_access_key=self.settings.aws_secret_access_key,
+                region_name=self.settings.aws_region,
+            )
+            self.bucket_name = self.settings.s3_bucket_name
+        else:
+            self.s3_client = None
+            self.bucket_name = None
 
     def _generate_key(self, user_id: str, filename: str) -> str:
-        """Generate a unique S3 key for the file."""
+        """Generate a unique key for the file."""
         ext = os.path.splitext(filename)[1] or '.mp3'
         date_prefix = datetime.utcnow().strftime('%Y/%m/%d')
         unique_id = uuid.uuid4().hex[:8]
@@ -50,6 +51,27 @@ class StorageService:
         """
         key = self._generate_key(user_id, filename)
 
+        if self.use_local:
+            return await self._upload_local(file, key)
+        else:
+            return await self._upload_s3(file, key, content_type)
+
+    async def _upload_local(self, file: BinaryIO, key: str) -> dict:
+        """Upload to local filesystem (placeholder for dev - doesn't actually store)."""
+        # For local dev, we just generate a placeholder path
+        # The audio data is not actually stored to save disk space during testing
+        file_path = os.path.join(self.local_path, key)
+
+        return {
+            'key': key,
+            'url': f"local://{key}",  # Placeholder URL
+            'bucket': 'local',
+        }
+
+    async def _upload_s3(self, file: BinaryIO, key: str, content_type: str) -> dict:
+        """Upload to S3."""
+        from botocore.exceptions import ClientError
+
         try:
             self.s3_client.upload_fileobj(
                 file,
@@ -61,11 +83,10 @@ class StorageService:
                 }
             )
 
-            # Generate a presigned URL for access
             url = self.s3_client.generate_presigned_url(
                 'get_object',
                 Params={'Bucket': self.bucket_name, 'Key': key},
-                ExpiresIn=3600 * 24 * 7  # 7 days
+                ExpiresIn=3600 * 24 * 7
             )
 
             return {
@@ -82,16 +103,11 @@ class StorageService:
         key: str,
         expires_in: int = 3600
     ) -> str:
-        """
-        Get a presigned URL for accessing a file.
+        """Get a URL for accessing a file."""
+        if self.use_local:
+            return f"local://{key}"
 
-        Args:
-            key: S3 object key
-            expires_in: URL expiration in seconds
-
-        Returns:
-            Presigned URL string
-        """
+        from botocore.exceptions import ClientError
         try:
             url = self.s3_client.generate_presigned_url(
                 'get_object',
@@ -103,12 +119,14 @@ class StorageService:
             raise Exception(f"Failed to generate URL: {str(e)}")
 
     async def delete_audio(self, key: str) -> bool:
-        """
-        Delete an audio file from storage.
+        """Delete an audio file from storage."""
+        if self.use_local:
+            file_path = os.path.join(self.local_path, key)
+            if os.path.exists(file_path):
+                os.remove(file_path)
+            return True
 
-        Returns:
-            True if successful
-        """
+        from botocore.exceptions import ClientError
         try:
             self.s3_client.delete_object(
                 Bucket=self.bucket_name,
@@ -125,14 +143,16 @@ class StorageService:
         content_type: str = "audio/mpeg",
         expires_in: int = 3600
     ) -> dict:
-        """
-        Generate a presigned URL for direct upload from client.
-
-        Returns:
-            dict with upload_url and key
-        """
+        """Generate a presigned URL for direct upload from client."""
         key = self._generate_key(user_id, filename)
 
+        if self.use_local:
+            return {
+                'upload_url': f"local://{key}",
+                'key': key,
+            }
+
+        from botocore.exceptions import ClientError
         try:
             url = self.s3_client.generate_presigned_url(
                 'put_object',

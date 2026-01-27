@@ -2,7 +2,7 @@
  * Authentication Service
  */
 
-import api from './api';
+import api, { API_BASE_URL } from './api';
 import * as AppleAuthentication from 'expo-apple-authentication';
 
 export interface User {
@@ -36,12 +36,6 @@ export interface LoginData {
   email: string;
   password: string;
 }
-
-// Use your machine's IP for physical devices, localhost for iOS simulator
-const DEV_API_HOST = '192.168.1.6';
-const API_BASE_URL = __DEV__
-  ? `http://${DEV_API_HOST}:8000/api/v1`
-  : 'https://your-production-api.com/api/v1';
 
 class AuthService {
   async register(data: RegisterData): Promise<{ user?: User; error?: string }> {
