@@ -38,37 +38,10 @@ export function SwipeableNoteCard({
 }: SwipeableNoteCardProps) {
   const swipeableRef = useRef<Swipeable>(null);
   const [showMenu, setShowMenu] = useState(false);
-  const shakeAnim = useRef(new Animated.Value(0)).current;
   const minusScaleAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     if (isEditMode) {
-      // Start shake animation
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(shakeAnim, {
-            toValue: 1,
-            duration: 100,
-            useNativeDriver: true,
-          }),
-          Animated.timing(shakeAnim, {
-            toValue: -1,
-            duration: 100,
-            useNativeDriver: true,
-          }),
-          Animated.timing(shakeAnim, {
-            toValue: 1,
-            duration: 100,
-            useNativeDriver: true,
-          }),
-          Animated.timing(shakeAnim, {
-            toValue: 0,
-            duration: 100,
-            useNativeDriver: true,
-          }),
-        ])
-      ).start();
-
       // Animate minus button in
       Animated.spring(minusScaleAnim, {
         toValue: 1,
@@ -77,8 +50,7 @@ export function SwipeableNoteCard({
         friction: 7,
       }).start();
     } else {
-      // Reset animations
-      shakeAnim.setValue(0);
+      // Reset animation
       Animated.timing(minusScaleAnim, {
         toValue: 0,
         duration: 150,
@@ -180,19 +152,9 @@ export function SwipeableNoteCard({
     }
   };
 
-  const rotation = shakeAnim.interpolate({
-    inputRange: [-1, 1],
-    outputRange: ['-1.5deg', '1.5deg'],
-  });
-
   if (isEditMode) {
     return (
-      <Animated.View
-        style={[
-          styles.editModeContainer,
-          { transform: [{ rotate: rotation }] },
-        ]}
-      >
+      <View style={styles.editModeContainer}>
         <Animated.View style={[styles.minusButton, { transform: [{ scale: minusScaleAnim }] }]}>
           <TouchableOpacity onPress={handleDelete} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
             <View style={styles.minusCircle}>
@@ -207,7 +169,7 @@ export function SwipeableNoteCard({
         >
           <NoteCard note={note} onPress={onPress} />
         </TouchableOpacity>
-      </Animated.View>
+      </View>
     );
   }
 
