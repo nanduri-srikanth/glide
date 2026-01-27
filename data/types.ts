@@ -53,6 +53,10 @@ export interface Folder {
   noteCount: number;
   color?: string;
   isSystem?: boolean; // For "All iCloud", "Notes", "Recently Deleted"
+  sortOrder: number;
+  parentId?: string | null;
+  depth: number;
+  children?: Folder[];
 }
 
 export interface NotesState {

@@ -75,7 +75,21 @@ export interface FolderResponse {
   color: string | null;
   is_system: boolean;
   note_count: number;
+  sort_order: number;
+  parent_id: string | null;
+  depth: number;
+  children: FolderResponse[];
   created_at: string;
+}
+
+export interface FolderReorderItem {
+  id: string;
+  sort_order: number;
+  parent_id: string | null;
+}
+
+export interface FolderBulkReorder {
+  folders: FolderReorderItem[];
 }
 
 export interface NoteFilters {
@@ -155,6 +169,12 @@ class NotesService {
     return { success: true };
   }
 
+  async deleteFolder(folderId: string): Promise<{ success: boolean; error?: string }> {
+    const response = await api.delete(`/folders/${folderId}`);
+    if (response.error) return { success: false, error: response.error.message };
+    return { success: true };
+  }
+
   convertToNote(apiNote: NoteDetailResponse): Note {
     return {
       id: apiNote.id,
@@ -198,6 +218,12 @@ class NotesService {
     };
   }
 
+  async reorderFolders(updates: FolderReorderItem[]): Promise<{ success: boolean; error?: string }> {
+    const response = await api.post('/folders/reorder', { folders: updates });
+    if (response.error) return { success: false, error: response.error.message };
+    return { success: true };
+  }
+
   convertToFolder(apiFolder: FolderResponse): Folder {
     return {
       id: apiFolder.id,
@@ -206,6 +232,10 @@ class NotesService {
       noteCount: apiFolder.note_count,
       color: apiFolder.color || undefined,
       isSystem: apiFolder.is_system,
+      sortOrder: apiFolder.sort_order,
+      parentId: apiFolder.parent_id,
+      depth: apiFolder.depth,
+      children: apiFolder.children?.map(c => this.convertToFolder(c)),
     };
   }
 }

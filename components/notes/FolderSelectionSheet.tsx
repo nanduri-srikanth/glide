@@ -48,26 +48,31 @@ export function FolderSelectionSheet({
 
   // Fetch folders when sheet becomes visible
   useEffect(() => {
-    if (visible && isAuthenticated && folders.length === 0) {
+    if (visible && isAuthenticated) {
       setIsLoadingFolders(true);
       fetchFolders().finally(() => setIsLoadingFolders(false));
     }
   }, [visible, isAuthenticated]);
 
-  const displayFolders: Folder[] = folders.map(f => ({
-    id: f.id,
-    name: f.name,
-    icon: f.icon || 'folder',
-    noteCount: f.note_count,
-    color: f.color || undefined,
-    isSystem: f.is_system,
-  }));
+  // Filter out "All Notes" since it's a virtual folder that shows all notes
+  const displayFolders: Folder[] = folders
+    .filter(f => f.name !== 'All Notes')
+    .map(f => ({
+      id: f.id,
+      name: f.name,
+      icon: f.icon || 'folder',
+      noteCount: f.note_count,
+      color: f.color || undefined,
+      isSystem: f.is_system,
+      sortOrder: f.sort_order || 0,
+      depth: f.depth || 0,
+    }));
 
   useEffect(() => {
     if (visible) {
       Animated.spring(slideAnim, {
         toValue: 0,
-        useNativeDriver: true,
+        useNativeDriver: false,
         tension: 65,
         friction: 11,
       }).start();
@@ -75,7 +80,7 @@ export function FolderSelectionSheet({
       Animated.timing(slideAnim, {
         toValue: SHEET_HEIGHT,
         duration: 250,
-        useNativeDriver: true,
+        useNativeDriver: false,
       }).start();
       setShowFolderList(false);
     }
@@ -135,7 +140,7 @@ export function FolderSelectionSheet({
             <Text style={styles.processingText}>{processingStatus || 'Processing...'}</Text>
           </View>
         ) : showFolderList ? (
-          <>
+          <View style={styles.folderListContainer}>
             {/* Back button and title */}
             <View style={styles.listHeader}>
               <TouchableOpacity onPress={() => setShowFolderList(false)} style={styles.backButton}>
@@ -166,7 +171,7 @@ export function FolderSelectionSheet({
                 showsVerticalScrollIndicator={false}
               />
             )}
-          </>
+          </View>
         ) : (
           <>
             {/* Title */}
@@ -279,6 +284,9 @@ const styles = StyleSheet.create({
   processingText: {
     fontSize: 16,
     color: NotesColors.primary,
+  },
+  folderListContainer: {
+    flex: 1,
   },
   listHeader: {
     flexDirection: 'row',

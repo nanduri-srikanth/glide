@@ -1,38 +1,100 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { StyleSheet, View, Text, FlatList, SafeAreaView, RefreshControl, ActivityIndicator, TouchableOpacity, Alert } from 'react-native';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { StyleSheet, View, Text, SafeAreaView, RefreshControl, ActivityIndicator, TouchableOpacity, Alert, ScrollView } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { NotesColors } from '@/constants/theme';
-import { FolderCard } from '@/components/notes/FolderCard';
+import { DraggableFolderList } from '@/components/notes/DraggableFolderList';
 import { SearchBar } from '@/components/notes/SearchBar';
 import { ComposeButton } from '@/components/notes/ComposeButton';
 import { useNotes } from '@/context/NotesContext';
 import { useAuth } from '@/context/AuthContext';
 import { Folder } from '@/data/types';
 import { mockFolders } from '@/data/mockFolders';
+import { notesService } from '@/services/notes';
 
 export default function FoldersScreen() {
   const router = useRouter();
   const { isAuthenticated, user, logout } = useAuth();
-  const { folders, isLoading, error, fetchFolders } = useNotes();
+  const {
+    folders,
+    isLoading,
+    error,
+    fetchFolders,
+    deleteFolder,
+    expandedFolderIds,
+    toggleFolderExpanded,
+    reorderFolders,
+    buildFlattenedTree,
+  } = useNotes();
   const [searchQuery, setSearchQuery] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
-  const [selectedFolders, setSelectedFolders] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (isAuthenticated) fetchFolders();
   }, [isAuthenticated, fetchFolders]);
 
-  const displayFolders: Folder[] = folders.length > 0
-    ? folders.map(f => ({ id: f.id, name: f.name, icon: f.icon, noteCount: f.note_count, color: f.color || undefined, isSystem: f.is_system }))
-    : mockFolders;
+  // Helper to convert API folder to display format
+  const convertFolder = useCallback((f: any): Folder => ({
+    id: f.id,
+    name: f.name,
+    icon: f.icon,
+    noteCount: f.note_count,
+    color: f.color || undefined,
+    isSystem: f.is_system,
+    sortOrder: f.sort_order || 0,
+    parentId: f.parent_id,
+    depth: f.depth || 0,
+    children: f.children?.map((c: any) => convertFolder(c)),
+  }), []);
 
-  const filteredFolders = displayFolders.filter(folder =>
-    folder.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // Convert API folders to display format with tree structure
+  // Only show mock folders when NOT authenticated
+  const displayFolders: Folder[] = useMemo(() => {
+    if (isAuthenticated) {
+      // When authenticated, always use API folders (even if empty)
+      if (folders.length > 0) {
+        return buildFlattenedTree();
+      }
+      return []; // Return empty array while loading or if no folders
+    }
+    // Mock folders only for unauthenticated state
+    return mockFolders.map(f => ({
+      ...f,
+      sortOrder: f.sortOrder || 0,
+      depth: f.depth || 0,
+      children: [],
+    }));
+  }, [isAuthenticated, folders, buildFlattenedTree]);
 
-  const handleFolderPress = (folder: Folder) => router.push(`/notes/${folder.id}`);
+  // Filter folders by search query (search in flattened list)
+  const filteredFolders = useMemo(() => {
+    if (!searchQuery.trim()) {
+      // When not searching, return tree structure from API if authenticated
+      if (isAuthenticated) {
+        return folders.map(convertFolder);
+      }
+      // Mock folders for unauthenticated
+      return mockFolders.map(f => ({
+        ...f,
+        sortOrder: f.sortOrder || 0,
+        depth: f.depth || 0,
+        children: [],
+      }));
+    }
+
+    // When searching, filter the flattened list
+    const query = searchQuery.toLowerCase();
+    return displayFolders.filter(folder =>
+      folder.name.toLowerCase().includes(query)
+    );
+  }, [isAuthenticated, folders, displayFolders, searchQuery, convertFolder]);
+
+  const handleFolderPress = useCallback((folder: Folder) => {
+    router.push(`/notes/${folder.id}`);
+  }, [router]);
+
   const handleComposePress = () => router.push('/recording');
   const handleMicPress = () => router.push('/recording');
 
@@ -49,9 +111,8 @@ export default function FoldersScreen() {
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Create',
-          onPress: async (name) => {
+          onPress: async (name: string | undefined) => {
             if (name?.trim()) {
-              const { notesService } = await import('@/services/notes');
               const { data, error } = await notesService.createFolder({
                 name: name.trim(),
                 icon: 'folder',
@@ -98,8 +159,26 @@ export default function FoldersScreen() {
 
   const toggleEditMode = useCallback(() => {
     setIsEditMode(prev => !prev);
-    setSelectedFolders(new Set());
   }, []);
+
+  const handleDeleteFolder = useCallback(async (folderId: string) => {
+    const success = await deleteFolder(folderId);
+    if (!success) {
+      Alert.alert('Error', 'Failed to delete folder. Please try again.');
+    }
+  }, [deleteFolder]);
+
+  const handleToggleExpanded = useCallback((folderId: string) => {
+    toggleFolderExpanded(folderId);
+  }, [toggleFolderExpanded]);
+
+  const handleReorder = useCallback(async (updates: any[]) => {
+    const success = await reorderFolders(updates);
+    if (!success) {
+      Alert.alert('Error', 'Failed to reorder folders. Please try again.');
+    }
+    return success;
+  }, [reorderFolders]);
 
   const renderHeader = () => (
     <View style={styles.header}>
@@ -113,62 +192,111 @@ export default function FoldersScreen() {
     </View>
   );
 
-  const renderFolder = ({ item }: { item: Folder }) => (
-    <FolderCard folder={item} onPress={() => handleFolderPress(item)} />
+  const renderEmptyComponent = () => (
+    <View style={styles.emptyContainer}>
+      {isLoading ? (
+        <ActivityIndicator size="large" color={NotesColors.primary} />
+      ) : (
+        <Text style={styles.emptyText}>{error || 'No folders found'}</Text>
+      )}
+    </View>
   );
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.titleContainer}>
-        <Text style={styles.title}>Folders</Text>
-        <View style={styles.headerButtons}>
-          <TouchableOpacity style={styles.iconButton} onPress={handleAuthPress}>
-            <Ionicons
-              name={isAuthenticated ? 'person-circle' : 'person-circle-outline'}
-              size={28}
-              color={isAuthenticated ? NotesColors.primary : NotesColors.textSecondary}
-            />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.iconButton} onPress={handleAddFolder}>
-            <View style={styles.addFolderIcon}>
-              <Ionicons name="folder-outline" size={24} color={NotesColors.primary} />
-              <View style={styles.addBadge}>
-                <Ionicons name="add" size={12} color={NotesColors.textPrimary} />
+    <GestureHandlerRootView style={styles.container}>
+      <SafeAreaView style={styles.container}>
+        <View style={styles.titleContainer}>
+          <Text style={styles.title}>Folders</Text>
+          <View style={styles.headerButtons}>
+            <TouchableOpacity style={styles.iconButton} onPress={handleAuthPress}>
+              <Ionicons
+                name={isAuthenticated ? 'person-circle' : 'person-circle-outline'}
+                size={28}
+                color={isAuthenticated ? NotesColors.primary : NotesColors.textSecondary}
+              />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.iconButton} onPress={handleAddFolder}>
+              <View style={styles.addFolderIcon}>
+                <Ionicons name="folder-outline" size={24} color={NotesColors.primary} />
+                <View style={styles.addBadge}>
+                  <Ionicons name="add" size={12} color={NotesColors.textPrimary} />
+                </View>
               </View>
-            </View>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.editButton} onPress={toggleEditMode}>
-            <Text style={isEditMode ? styles.doneText : styles.editText}>
-              {isEditMode ? 'Done' : 'Edit'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      <FlatList
-        data={filteredFolders}
-        renderItem={renderFolder}
-        keyExtractor={(item) => item.id}
-        ListHeaderComponent={renderHeader}
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            {isLoading ? <ActivityIndicator size="large" color={NotesColors.primary} /> : <Text style={styles.emptyText}>{error || 'No folders found'}</Text>}
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.editButton} onPress={toggleEditMode}>
+              <Text style={isEditMode ? styles.doneText : styles.editText}>
+                {isEditMode ? 'Done' : 'Edit'}
+              </Text>
+            </TouchableOpacity>
           </View>
-        }
-        contentContainerStyle={styles.listContent}
-        showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={NotesColors.primary} />}
-      />
+        </View>
 
-      <SearchBar value={searchQuery} onChangeText={setSearchQuery} onMicPress={handleMicPress} placeholder="Search" />
-      <ComposeButton onPress={handleComposePress} />
-    </SafeAreaView>
+        {isEditMode ? (
+          <DraggableFolderList
+            folders={filteredFolders}
+            isEditMode={isEditMode}
+            isLoading={isLoading}
+            expandedFolderIds={expandedFolderIds}
+            onFolderPress={handleFolderPress}
+            onDeleteFolder={handleDeleteFolder}
+            onToggleExpanded={handleToggleExpanded}
+            onReorder={handleReorder}
+            ListHeaderComponent={renderHeader()}
+            ListEmptyComponent={renderEmptyComponent()}
+          />
+        ) : (
+          <ScrollView
+            contentContainerStyle={styles.listContent}
+            showsVerticalScrollIndicator={false}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={onRefresh}
+                tintColor={NotesColors.primary}
+              />
+            }
+          >
+            {renderHeader()}
+            <DraggableFolderList
+              folders={filteredFolders}
+              isEditMode={false}
+              isLoading={isLoading}
+              expandedFolderIds={expandedFolderIds}
+              onFolderPress={handleFolderPress}
+              onDeleteFolder={handleDeleteFolder}
+              onToggleExpanded={handleToggleExpanded}
+              onReorder={handleReorder}
+              ListEmptyComponent={renderEmptyComponent()}
+            />
+          </ScrollView>
+        )}
+
+        {!isEditMode && (
+          <>
+            <SearchBar
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              onMicPress={handleMicPress}
+              placeholder="Search"
+            />
+            <ComposeButton onPress={handleComposePress} />
+          </>
+        )}
+      </SafeAreaView>
+    </GestureHandlerRootView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: NotesColors.background },
-  titleContainer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingTop: 16, paddingBottom: 8 },
+  titleContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 8,
+  },
   title: { fontSize: 34, fontWeight: '700', color: NotesColors.textPrimary },
   headerButtons: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   iconButton: { padding: 4 },
@@ -199,7 +327,12 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   signInBannerText: { flex: 1, fontSize: 14, color: NotesColors.textPrimary },
-  listContent: { paddingHorizontal: 16, paddingBottom: 120 },
-  emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 60 },
+  listContent: { paddingBottom: 120 },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 60,
+  },
   emptyText: { fontSize: 17, color: NotesColors.textSecondary },
 });
