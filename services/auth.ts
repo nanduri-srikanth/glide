@@ -2,7 +2,7 @@
  * Authentication Service
  */
 
-import api from './api';
+import api, { API_BASE_URL } from './api';
 import * as AppleAuthentication from 'expo-apple-authentication';
 
 export interface User {
@@ -36,19 +36,6 @@ export interface LoginData {
   email: string;
   password: string;
 }
-
-import { Platform } from 'react-native';
-
-// API Configuration - matches api.ts
-const getDevHost = () => {
-  if (Platform.OS === 'ios') return 'localhost';
-  if (Platform.OS === 'android') return '10.0.2.2';
-  return 'localhost';
-};
-
-const API_BASE_URL = __DEV__
-  ? `http://${getDevHost()}:8000/api/v1`
-  : 'https://your-production-api.com/api/v1';
 
 class AuthService {
   async register(data: RegisterData): Promise<{ user?: User; error?: string }> {

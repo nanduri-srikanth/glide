@@ -1,7 +1,6 @@
 """Storage service for audio files using S3, Supabase, or local filesystem."""
 import os
 import uuid
-import shutil
 from datetime import datetime
 from typing import BinaryIO
 

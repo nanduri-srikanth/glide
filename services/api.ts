@@ -19,7 +19,7 @@ const getDevHost = () => {
   return 'localhost'; // Web
 };
 
-const API_BASE_URL = __DEV__
+export const API_BASE_URL = __DEV__
   ? `http://${getDevHost()}:8000/api/v1`  // Development
   : 'https://your-production-api.com/api/v1';  // Production
 
