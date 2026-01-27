@@ -161,6 +161,143 @@ Rules:
             next_steps=[],
         )
 
+    async def extract_actions_for_append(
+        self,
+        new_transcript: str,
+        existing_transcript: str,
+        existing_title: str,
+        user_context: Optional[dict] = None
+    ) -> ActionExtractionResult:
+        """
+        Extract actions from new audio appended to an existing note.
+        Designed to avoid duplicating actions already captured in the original note.
+
+        Args:
+            new_transcript: The newly transcribed text
+            existing_transcript: The existing note's transcript
+            existing_title: The existing note's title
+            user_context: Optional context about the user
+
+        Returns:
+            ActionExtractionResult with only NEW actions
+        """
+        # Return mock response when API key not configured
+        if not self.client:
+            return self._mock_extraction(new_transcript)
+
+        context_str = ""
+        if user_context:
+            context_str = f"""
+User context:
+- Timezone: {user_context.get('timezone', 'America/Chicago')}
+- Current date: {user_context.get('current_date', 'today')}
+"""
+
+        prompt = f"""You are analyzing ADDITIONAL audio that was recorded and appended to an existing note.
+Your task is to extract ONLY NEW actionable items from the new audio that are NOT already covered in the existing note.
+
+EXISTING NOTE TITLE: {existing_title}
+
+EXISTING NOTE TRANSCRIPT:
+{existing_transcript}
+
+---
+
+NEW AUDIO TRANSCRIPT (just recorded):
+{new_transcript}
+
+{context_str}
+
+IMPORTANT: Only extract actions from the NEW transcript that are genuinely new additions.
+Do NOT duplicate actions that are already implied by the existing transcript.
+If the new audio is just a continuation of the same thought with no new actions, return empty arrays.
+
+Extract and return ONLY valid JSON (no markdown, no explanation) with this exact structure:
+{{
+  "title": "{existing_title}",
+  "folder": "Keep the same folder",
+  "tags": ["any", "new", "tags", "only"],
+  "summary": "Brief summary of what NEW information was added",
+  "calendar": [
+    {{
+      "title": "NEW Event name",
+      "date": "YYYY-MM-DD",
+      "time": "HH:MM (24hr, optional)",
+      "location": "optional location",
+      "attendees": ["optional", "attendees"]
+    }}
+  ],
+  "email": [
+    {{
+      "to": "email@example.com",
+      "subject": "NEW Email subject",
+      "body": "Draft email body"
+    }}
+  ],
+  "reminders": [
+    {{
+      "title": "NEW Reminder text",
+      "due_date": "YYYY-MM-DD",
+      "due_time": "HH:MM (optional)",
+      "priority": "low|medium|high"
+    }}
+  ],
+  "next_steps": [
+    "NEW action item 1",
+    "NEW action item 2"
+  ]
+}}
+
+Rules:
+1. ONLY include actions explicitly mentioned in the NEW transcript
+2. Do NOT duplicate any actions implied by the existing transcript
+3. If no new actions are found, use empty arrays []
+4. The title should remain the same as the existing title
+5. Only add new tags that are relevant to the new content
+6. Return ONLY the JSON object, nothing else"""
+
+        response = self.client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=2000,
+            messages=[{"role": "user", "content": prompt}]
+        )
+
+        # Parse JSON response
+        response_text = response.content[0].text.strip()
+
+        # Handle potential markdown code blocks
+        if response_text.startswith("```"):
+            response_text = response_text.split("```")[1]
+            if response_text.startswith("json"):
+                response_text = response_text[4:]
+            response_text = response_text.strip()
+
+        try:
+            data = json.loads(response_text)
+        except json.JSONDecodeError:
+            # Fallback if JSON parsing fails - return empty actions
+            return ActionExtractionResult(
+                title=existing_title,
+                folder="Personal",
+                tags=[],
+                summary=f"Added: {new_transcript[:100]}..." if len(new_transcript) > 100 else f"Added: {new_transcript}",
+                calendar=[],
+                email=[],
+                reminders=[],
+                next_steps=[],
+            )
+
+        return ActionExtractionResult(
+            title=data.get("title", existing_title),
+            folder=data.get("folder", "Personal"),
+            tags=data.get("tags", [])[:5],
+            summary=data.get("summary"),
+            calendar=data.get("calendar", []),
+            email=data.get("email", []),
+            reminders=data.get("reminders", []),
+            next_steps=data.get("next_steps", []),
+        )
+
     async def generate_email_draft(
         self,
         context: str,

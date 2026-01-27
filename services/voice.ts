@@ -71,6 +71,37 @@ class VoiceService {
     }
   }
 
+  async appendToNote(
+    noteId: string,
+    audioUri: string,
+    onProgress?: (progress: number, status: string) => void
+  ): Promise<{ data?: VoiceProcessingResponse; error?: string }> {
+    try {
+      onProgress?.(10, 'Preparing audio...');
+
+      const formData = new FormData();
+      const filename = audioUri.split('/').pop() || 'recording_append.m4a';
+      const fileType = this.getContentType(filename);
+
+      formData.append('audio_file', {
+        uri: audioUri,
+        name: filename,
+        type: fileType,
+      } as unknown as Blob);
+
+      onProgress?.(30, 'Uploading audio...');
+
+      const response = await api.postFormData<VoiceProcessingResponse>(`/voice/append/${noteId}`, formData);
+
+      if (response.error) return { error: response.error.message };
+
+      onProgress?.(100, 'Complete!');
+      return { data: response.data };
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : 'Failed to append to note' };
+    }
+  }
+
   async transcribeOnly(audioUri: string): Promise<{ data?: TranscriptionResult; error?: string }> {
     try {
       const formData = new FormData();

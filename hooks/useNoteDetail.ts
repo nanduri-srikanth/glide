@@ -5,6 +5,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { notesService, NoteDetailResponse } from '@/services/notes';
 import { actionsService, ActionExecuteResponse } from '@/services/actions';
+import { voiceService, VoiceProcessingResponse } from '@/services/voice';
 import { Note } from '@/data/types';
 import { useNotes } from '@/context/NotesContext';
 
@@ -13,6 +14,11 @@ export function useNoteDetail(noteId: string | undefined) {
   const [rawNote, setRawNote] = useState<NoteDetailResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Append audio state
+  const [isAppending, setIsAppending] = useState(false);
+  const [appendProgress, setAppendProgress] = useState(0);
+  const [appendStatus, setAppendStatus] = useState('');
 
   const fetchNote = useCallback(async () => {
     if (!noteId) {
@@ -90,9 +96,53 @@ export function useNoteDetail(noteId: string | undefined) {
     return !!data;
   }, [refresh]);
 
+  const appendAudio = useCallback(async (audioUri: string): Promise<boolean> => {
+    if (!noteId) return false;
+
+    setIsAppending(true);
+    setAppendProgress(0);
+    setAppendStatus('Starting...');
+
+    const { data, error: apiError } = await voiceService.appendToNote(
+      noteId,
+      audioUri,
+      (progress, status) => {
+        setAppendProgress(progress);
+        setAppendStatus(status);
+      }
+    );
+
+    setIsAppending(false);
+    setAppendProgress(0);
+    setAppendStatus('');
+
+    if (apiError) {
+      setError(apiError);
+      return false;
+    }
+
+    // Refresh note to get updated data
+    await refresh();
+    return true;
+  }, [noteId, refresh]);
+
   const note: Note | null = rawNote ? notesService.convertToNote(rawNote) : null;
 
-  return { note, rawNote, isLoading, error, refresh, updateNote, deleteNote, executeAction, completeAction };
+  return {
+    note,
+    rawNote,
+    isLoading,
+    error,
+    refresh,
+    updateNote,
+    deleteNote,
+    executeAction,
+    completeAction,
+    appendAudio,
+    isAppending,
+    appendProgress,
+    appendStatus,
+  };
 }
 
 export default useNoteDetail;
