@@ -120,6 +120,11 @@ export default function NoteDetailScreen() {
   };
 
   // Convert rawNote actions to the format expected by AISummaryPanel
+  const extractTime = (dateStr: string | null) => {
+    if (!dateStr) return '';
+    return new Date(dateStr).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+  };
+
   const actions = rawNote?.actions ? {
     calendar: rawNote.actions
       .filter(a => a.action_type === 'calendar')
@@ -127,27 +132,30 @@ export default function NoteDetailScreen() {
         id: a.id,
         title: a.title,
         date: a.scheduled_date || '',
-        time: a.scheduled_time || '',
+        time: extractTime(a.scheduled_date),
         status: a.status,
       })),
     email: rawNote.actions
       .filter(a => a.action_type === 'email')
       .map(a => ({
         id: a.id,
-        to: a.recipient || '',
-        subject: a.title,
-        status: a.status as 'draft' | 'sent',
+        to: a.email_to || '',
+        subject: a.email_subject || a.title,
+        preview: a.email_body?.slice(0, 100) || '',
+        status: (a.status === 'executed' ? 'sent' : 'draft') as 'draft' | 'sent',
       })),
     reminders: rawNote.actions
       .filter(a => a.action_type === 'reminder')
       .map(a => ({
         id: a.id,
         title: a.title,
-        dueDate: a.due_date || '',
+        dueDate: a.scheduled_date || '',
+        dueTime: extractTime(a.scheduled_date),
+        priority: a.priority,
         status: a.status,
       })),
     nextSteps: rawNote.actions
-      .filter(a => a.action_type === 'task')
+      .filter(a => a.action_type === 'next_step')
       .map(a => a.title),
   } : note.actions;
 
