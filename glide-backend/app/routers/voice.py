@@ -440,10 +440,10 @@ async def synthesize_note(
             folder=folder_name,
             tags=synthesis.get("tags", []),
             summary=synthesis.get("summary"),
-            calendar=[],
-            email=[],
-            reminders=[],
-            next_steps=synthesis.get("next_steps", []),
+            calendar=synthesis.get("calendar", []),
+            email=synthesis.get("email", []),
+            reminders=synthesis.get("reminders", []),
+            next_steps=[],
         )
 
         # Convert input_history to InputHistoryEntry objects
@@ -750,10 +750,10 @@ async def add_to_synthesis(
             folder=folder_name,
             tags=note.tags or [],
             summary=note.summary,
-            calendar=[],
-            email=[],
-            reminders=[],
-            next_steps=new_actions.get("next_steps", []),
+            calendar=new_actions.get("calendar", []),
+            email=new_actions.get("email", []),
+            reminders=new_actions.get("reminders", []),
+            next_steps=[],
         )
 
         input_entries = [
@@ -880,10 +880,10 @@ async def resynthesize_note(
             folder=folder_name,
             tags=note.tags or [],
             summary=note.summary,
-            calendar=[],
-            email=[],
-            reminders=[],
-            next_steps=synthesis.get("next_steps", []),
+            calendar=synthesis.get("calendar", []),
+            email=synthesis.get("email", []),
+            reminders=synthesis.get("reminders", []),
+            next_steps=[],
         )
 
         input_entries = [
@@ -1018,10 +1018,10 @@ async def delete_input(
             folder=folder_name,
             tags=note.tags or [],
             summary=note.summary,
-            calendar=[],
-            email=[],
-            reminders=[],
-            next_steps=synthesis.get("next_steps", []),
+            calendar=synthesis.get("calendar", []),
+            email=synthesis.get("email", []),
+            reminders=synthesis.get("reminders", []),
+            next_steps=[],
         )
 
         input_entries = [

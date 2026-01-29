@@ -38,7 +38,11 @@ class ReminderActionExtracted(BaseModel):
 
 
 class ActionExtractionResult(BaseModel):
-    """Schema for AI action extraction result."""
+    """Schema for AI action extraction result.
+
+    Actions are limited to: Calendar, Email, and Reminders.
+    Lists/tasks should be extracted as individual Reminders.
+    """
     title: str
     folder: str
     tags: List[str]
@@ -46,7 +50,7 @@ class ActionExtractionResult(BaseModel):
     calendar: List[CalendarActionExtracted] = []
     email: List[EmailActionExtracted] = []
     reminders: List[ReminderActionExtracted] = []
-    next_steps: List[str] = []
+    next_steps: List[str] = []  # Deprecated - always empty, use reminders instead
 
 
 class VoiceProcessingResponse(BaseModel):
@@ -81,7 +85,10 @@ class InputHistoryEntry(BaseModel):
 
 
 class SynthesisResult(BaseModel):
-    """Schema for content synthesis result."""
+    """Schema for content synthesis result.
+
+    Actions are limited to: Calendar, Email, and Reminders.
+    """
     narrative: str  # The synthesized cohesive narrative
     title: str
     folder: str
@@ -90,7 +97,7 @@ class SynthesisResult(BaseModel):
     calendar: List[CalendarActionExtracted] = []
     email: List[EmailActionExtracted] = []
     reminders: List[ReminderActionExtracted] = []
-    next_steps: List[str] = []
+    next_steps: List[str] = []  # Deprecated - always empty, use reminders instead
 
 
 class SynthesisResponse(BaseModel):

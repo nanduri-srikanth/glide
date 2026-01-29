@@ -55,6 +55,25 @@ Transcript:
 
 {context_str}
 
+PATTERN RECOGNITION - Look for these specific patterns:
+
+CALENDAR EVENTS - Create when you detect:
+- Meetings: "meeting with", "call with", "sync with", "catch up with"
+- Appointments: "appointment", "scheduled for", "at [time]", "on [date]"
+- Events: "dinner", "lunch", "conference", "presentation", "interview"
+- Time references: specific dates, "next Monday", "tomorrow at 3pm"
+
+EMAIL ACTIONS - Create when you detect:
+- Direct mentions: "email", "send", "write to", "reply to", "follow up with"
+- Communication intent: "let them know", "inform", "update [person]", "reach out to"
+- Include recipient, subject, and draft the email body based on context
+
+REMINDERS - Create when you detect:
+- Task lists: "I need to", "don't forget to", "remember to", "make sure to"
+- To-do items: "buy", "pick up", "call", "check", "review", "submit"
+- Deadlines: "by Friday", "before the meeting", "this week"
+- Any item in a list format (numbered or bulleted mentally)
+
 Extract and return ONLY valid JSON (no markdown, no explanation) with this exact structure:
 {{
   "title": "Brief descriptive title for this note (5-10 words max)",
@@ -74,31 +93,29 @@ Extract and return ONLY valid JSON (no markdown, no explanation) with this exact
     {{
       "to": "email@example.com or descriptive name",
       "subject": "Email subject line",
-      "body": "Draft email body content"
+      "body": "Draft email body content - be professional and complete"
     }}
   ],
   "reminders": [
     {{
-      "title": "Reminder text",
+      "title": "Clear, actionable reminder text",
       "due_date": "YYYY-MM-DD",
       "due_time": "HH:MM (optional)",
       "priority": "low|medium|high"
     }}
-  ],
-  "next_steps": [
-    "Action item 1",
-    "Action item 2"
   ]
 }}
 
 Rules:
-1. Only include actions that are explicitly mentioned or strongly implied
-2. Use realistic dates based on context (if "next Tuesday" is mentioned, calculate the actual date)
-3. For emails, draft professional content based on the context
-4. Categorize into the most appropriate folder
-5. Extract 2-5 relevant tags
-6. If no actions of a type are found, use empty array []
-7. Return ONLY the JSON object, nothing else"""
+1. Only extract Calendar, Email, and Reminder actions - nothing else
+2. Be thorough - if someone lists multiple items, create a reminder for EACH item
+3. Use realistic dates based on context (if "next Tuesday" is mentioned, calculate the actual date)
+4. For emails, draft complete professional content with greeting and sign-off placeholder
+5. For reminders, make titles clear and actionable (e.g., "Buy groceries" not just "groceries")
+6. Categorize into the most appropriate folder
+7. Extract 2-5 relevant tags
+8. If no actions of a type are found, use empty array []
+9. Return ONLY the JSON object, nothing else"""
 
         response = self.client.chat.completions.create(
             model=self.MODEL,
@@ -139,7 +156,7 @@ Rules:
             calendar=data.get("calendar", []),
             email=data.get("email", []),
             reminders=data.get("reminders", []),
-            next_steps=data.get("next_steps", []),
+            next_steps=[],  # Deprecated - no longer extracting next_steps
         )
 
     def _mock_extraction(self, transcript: str) -> ActionExtractionResult:
@@ -211,6 +228,22 @@ NEW AUDIO TRANSCRIPT (just recorded):
 
 {context_str}
 
+PATTERN RECOGNITION - Look for these specific patterns in the NEW content:
+
+CALENDAR EVENTS - Create when you detect:
+- Meetings: "meeting with", "call with", "sync with", "catch up with"
+- Appointments: "appointment", "scheduled for", "at [time]", "on [date]"
+- Events: "dinner", "lunch", "conference", "presentation", "interview"
+
+EMAIL ACTIONS - Create when you detect:
+- Direct mentions: "email", "send", "write to", "reply to", "follow up with"
+- Communication intent: "let them know", "inform", "update [person]"
+
+REMINDERS - Create when you detect:
+- Task lists: "I need to", "don't forget to", "remember to", "make sure to"
+- To-do items: any actionable task mentioned
+- Each item in a list should be a separate reminder
+
 IMPORTANT: Only extract actions from the NEW transcript that are genuinely new additions.
 Do NOT duplicate actions that are already implied by the existing transcript.
 If the new audio is just a continuation of the same thought with no new actions, return empty arrays.
@@ -232,32 +265,30 @@ Extract and return ONLY valid JSON (no markdown, no explanation) with this exact
   ],
   "email": [
     {{
-      "to": "email@example.com",
+      "to": "email@example.com or name",
       "subject": "NEW Email subject",
-      "body": "Draft email body"
+      "body": "Draft email body - complete and professional"
     }}
   ],
   "reminders": [
     {{
-      "title": "NEW Reminder text",
+      "title": "Clear, actionable reminder text",
       "due_date": "YYYY-MM-DD",
       "due_time": "HH:MM (optional)",
       "priority": "low|medium|high"
     }}
-  ],
-  "next_steps": [
-    "NEW action item 1",
-    "NEW action item 2"
   ]
 }}
 
 Rules:
-1. ONLY include actions explicitly mentioned in the NEW transcript
-2. Do NOT duplicate any actions implied by the existing transcript
-3. If no new actions are found, use empty arrays []
-4. The title should remain the same as the existing title
-5. Only add new tags that are relevant to the new content
-6. Return ONLY the JSON object, nothing else"""
+1. Only extract Calendar, Email, and Reminder actions - nothing else
+2. ONLY include actions explicitly mentioned in the NEW transcript
+3. Do NOT duplicate any actions implied by the existing transcript
+4. If someone lists multiple items, create a reminder for EACH item
+5. If no new actions are found, use empty arrays []
+6. The title should remain the same as the existing title
+7. Only add new tags that are relevant to the new content
+8. Return ONLY the JSON object, nothing else"""
 
         response = self.client.chat.completions.create(
             model=self.MODEL,
@@ -298,7 +329,7 @@ Rules:
             calendar=data.get("calendar", []),
             email=data.get("email", []),
             reminders=data.get("reminders", []),
-            next_steps=data.get("next_steps", []),
+            next_steps=[],  # Deprecated - no longer extracting next_steps
         )
 
     async def generate_email_draft(
@@ -418,7 +449,27 @@ IMPORTANT INSTRUCTIONS:
 2. Do NOT separate "typed" vs "spoken" - merge them into one flowing text
 3. Fix grammar, remove filler words, but preserve the user's voice and intent
 4. If there are contradictions, prefer the more recent/specific information
-5. Extract any actionable items mentioned
+5. Extract actionable items (Calendar, Email, Reminders only)
+
+PATTERN RECOGNITION - Look for these specific patterns:
+
+CALENDAR EVENTS - Create when you detect:
+- Meetings: "meeting with", "call with", "sync with", "catch up with"
+- Appointments: "appointment", "scheduled for", "at [time]", "on [date]"
+- Events: "dinner", "lunch", "conference", "presentation", "interview"
+- Time references: specific dates, "next Monday", "tomorrow at 3pm"
+
+EMAIL ACTIONS - Create when you detect:
+- Direct mentions: "email", "send", "write to", "reply to", "follow up with"
+- Communication intent: "let them know", "inform", "update [person]", "reach out to"
+- Include recipient, subject, and draft the complete email body
+
+REMINDERS - Create when you detect:
+- Task lists: "I need to", "don't forget to", "remember to", "make sure to"
+- To-do items: "buy", "pick up", "call", "check", "review", "submit"
+- Deadlines: "by Friday", "before the meeting", "this week"
+- Lists of items: each item in a list becomes a SEPARATE reminder
+- Shopping lists, errands, tasks - each item is a reminder
 
 Return ONLY valid JSON (no markdown, no explanation) with this exact structure:
 {{
@@ -440,29 +491,26 @@ Return ONLY valid JSON (no markdown, no explanation) with this exact structure:
     {{
       "to": "email@example.com or descriptive name",
       "subject": "Email subject line",
-      "body": "Draft email body content"
+      "body": "Draft email body content - complete and professional"
     }}
   ],
   "reminders": [
     {{
-      "title": "Reminder text",
+      "title": "Clear, actionable reminder text",
       "due_date": "YYYY-MM-DD",
       "due_time": "HH:MM (optional)",
       "priority": "low|medium|high"
     }}
-  ],
-  "next_steps": [
-    "Action item 1",
-    "Action item 2"
   ]
 }}
 
 Rules:
 1. The narrative should read as ONE cohesive piece, not sections
-2. Only include actions that are explicitly mentioned or strongly implied
-3. Use realistic dates based on context
-4. If no actions of a type are found, use empty array []
-5. Return ONLY the JSON object, nothing else"""
+2. Only extract Calendar, Email, and Reminder actions - nothing else
+3. Be thorough with reminders - if someone lists 5 items, create 5 reminders
+4. Use realistic dates based on context
+5. If no actions of a type are found, use empty array []
+6. Return ONLY the JSON object, nothing else"""
 
         response = self.client.chat.completions.create(
             model=self.MODEL,
@@ -505,7 +553,7 @@ Rules:
             "calendar": data.get("calendar", []),
             "email": data.get("email", []),
             "reminders": data.get("reminders", []),
-            "next_steps": data.get("next_steps", []),
+            "next_steps": [],  # Deprecated
         }
 
     def _mock_synthesis(self, combined: str, text: str, audio: str) -> dict:
@@ -663,6 +711,12 @@ DECISION CRITERIA:
   * Same topic, no contradictions
   * Just expanding on existing points
 
+PATTERN RECOGNITION for actions - Look for:
+
+CALENDAR: meetings, appointments, events with dates/times
+EMAIL: "email", "send to", "write to", "follow up with", communication intent
+REMINDERS: task lists, to-do items, "need to", "don't forget", each list item = separate reminder
+
 Return ONLY valid JSON (no markdown, no explanation) with this structure:
 {{
   "decision": {{
@@ -678,15 +732,15 @@ Return ONLY valid JSON (no markdown, no explanation) with this structure:
     "summary": "Updated 2-3 sentence summary",
     "calendar": [],
     "email": [],
-    "reminders": [],
-    "next_steps": []
+    "reminders": []
   }}
 }}
 
 IMPORTANT:
 - If appending, the narrative should seamlessly integrate the new content
 - If resynthesizing, create a completely fresh narrative from all information
-- Always return the COMPLETE narrative, not just changes"""
+- Always return the COMPLETE narrative, not just changes
+- Only extract Calendar, Email, and Reminder actions - nothing else"""
 
         response = self.client.chat.completions.create(
             model=self.MODEL,
