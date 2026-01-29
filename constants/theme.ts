@@ -5,36 +5,36 @@
 
 import { Platform } from 'react-native';
 
-const tintColorLight = '#636B2F';  // Dark Olive (Mossy Hollow)
+const tintColorLight = '#3D3D3D';  // Charcoal
 const tintColorDark = '#fff';
 
-// Notes App Mossy Hollow Color Scheme - Light Mode
-// Inspired by Figma's Mossy Hollow palette
+// Notes App Clean Charcoal Color Scheme - Light Mode
+// White background with charcoal icons and accents
 export const NotesColors = {
-  primary: '#636B2F',      // Dark Olive - Folder icons, selected states, primary buttons
-  secondary: '#34542C',    // Forest Green - Action badges, highlights, active elements
-  accent: '#AE5264',       // Mauve - Links, CTAs, contrast accents
-  background: '#F7F8F2',   // Soft sage white background
-  card: '#E8EBD9',         // Light sage card backgrounds
-  textPrimary: '#3D4127',  // Deep Forest - Dark text
-  textSecondary: '#6B7255', // Muted olive - Gray text
+  primary: '#3D3D3D',      // Charcoal - Folder icons, selected states, primary buttons
+  secondary: '#5A5A5A',    // Medium charcoal - Action badges, highlights
+  accent: '#2D2D2D',       // Dark charcoal - Links, CTAs
+  background: '#FFFFFF',   // Pure white background
+  card: '#F5F5F5',         // Light gray card backgrounds
+  textPrimary: '#2D2D2D',  // Dark charcoal text
+  textSecondary: '#7A7A7A', // Medium gray text
   // Derived colors for AI Summary Panel
-  aiPanelBackground: 'rgba(99, 107, 47, 0.08)',
-  aiPanelBorder: 'rgba(99, 107, 47, 0.3)',
+  aiPanelBackground: 'rgba(61, 61, 61, 0.06)',
+  aiPanelBorder: 'rgba(61, 61, 61, 0.2)',
   // Action badge colors
-  calendarBadge: '#636B2F',  // Dark Olive
-  emailBadge: '#34542C',     // Forest Green
-  reminderBadge: '#AE5264',  // Mauve
+  calendarBadge: '#3D3D3D',  // Charcoal
+  emailBadge: '#5A5A5A',     // Medium charcoal
+  reminderBadge: '#7A7A7A',  // Gray
 };
 
 export const Colors = {
   light: {
-    text: '#3D4127',
-    background: '#F7F8F2',
-    tint: '#636B2F',
-    icon: '#6B7255',
-    tabIconDefault: '#6B7255',
-    tabIconSelected: '#636B2F',
+    text: '#2D2D2D',
+    background: '#FFFFFF',
+    tint: '#3D3D3D',
+    icon: '#7A7A7A',
+    tabIconDefault: '#7A7A7A',
+    tabIconSelected: '#3D3D3D',
   },
   dark: {
     text: '#ECEDEE',
