@@ -114,6 +114,11 @@ export interface NoteFilters {
   per_page?: number;
 }
 
+export interface UnifiedSearchResponse {
+  folders: FolderResponse[];
+  notes: NoteListItem[];
+}
+
 class NotesService {
   async listNotes(filters: NoteFilters = {}): Promise<{ data?: NoteListResponse; error?: string }> {
     const params = new URLSearchParams();
@@ -159,6 +164,12 @@ class NotesService {
 
   async searchNotes(query: string, page: number = 1): Promise<{ data?: NoteListResponse; error?: string }> {
     const response = await api.get<NoteListResponse>(`/notes/search?q=${encodeURIComponent(query)}&page=${page}`);
+    if (response.error) return { error: response.error.message };
+    return { data: response.data };
+  }
+
+  async unifiedSearch(query: string): Promise<{ data?: UnifiedSearchResponse; error?: string }> {
+    const response = await api.get<UnifiedSearchResponse>(`/notes/search/all?q=${encodeURIComponent(query)}`);
     if (response.error) return { error: response.error.message };
     return { data: response.data };
   }

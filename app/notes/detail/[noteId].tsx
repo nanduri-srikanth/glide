@@ -12,6 +12,9 @@ import {
   Modal,
   Pressable,
   Animated,
+  KeyboardAvoidingView,
+  Platform,
+  InputAccessoryView,
 } from 'react-native';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -19,6 +22,7 @@ import { NotesColors } from '@/constants/theme';
 import { getNoteById, formatDuration } from '@/data/mockNotes';
 import { FloatingActionBar, ActionCounts } from '@/components/notes/FloatingActionBar';
 import { EditableActionsPanel } from '@/components/notes/EditableActionsPanel';
+import { FormattingToolbar, FormatType } from '@/components/notes/FormattingToolbar';
 import {
   CalendarAction,
   EmailAction,
@@ -35,7 +39,10 @@ import { Note } from '@/data/types';
 import { useNavigation, usePreventRemove } from '@react-navigation/native';
 import { generateTitleFromContent, isUserSetTitle } from '@/utils/textUtils';
 import { AddContentModal } from '@/components/notes/AddContentModal';
+import { MarkdownContent } from '@/components/notes/MarkdownContent';
 import { InputHistoryEntry } from '@/services/voice';
+
+const INPUT_ACCESSORY_ID = 'note-formatting-toolbar';
 
 // Convert mock note actions to server action format for the useActionDrafts hook
 function convertMockActionsToServerFormat(actions: NoteActions | undefined) {
@@ -193,7 +200,25 @@ export default function NoteDetailScreen() {
   // Track if either input is focused
   const [isTitleFocused, setIsTitleFocused] = useState(false);
   const [isTranscriptFocused, setIsTranscriptFocused] = useState(false);
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
   const originalTitleRef = useRef<string>(''); // For reverting if user clears title
+
+  // Keyboard visibility tracking
+  useEffect(() => {
+    const showSubscription = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      () => setIsKeyboardVisible(true)
+    );
+    const hideSubscription = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => setIsKeyboardVisible(false)
+    );
+
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, []);
 
   // Animated header interpolations (derived values - not hooks)
   const headerOpacity = scrollY.interpolate({
@@ -403,6 +428,50 @@ export default function NoteDetailScreen() {
     }
     setShowAddContentModal(true);
   }, [isAuthenticated]);
+
+  // Handle formatting from toolbar
+  const handleFormat = useCallback((format: FormatType, value?: string) => {
+    // Get current selection/cursor position from the transcript input
+    // For now, we'll insert markdown syntax at cursor or wrap selection
+    // This is a simplified implementation - full rich text would need more work
+
+    const formatMap: Record<FormatType, { prefix: string; suffix: string }> = {
+      'bold': { prefix: '**', suffix: '**' },
+      'italic': { prefix: '_', suffix: '_' },
+      'underline': { prefix: '<u>', suffix: '</u>' },
+      'bullet': { prefix: '\n- ', suffix: '' },
+      'number': { prefix: '\n1. ', suffix: '' },
+      'header': { prefix: '\n## ', suffix: '' },
+      'table': { prefix: '\n| Column 1 | Column 2 |\n|----------|----------|\n| Cell 1   | Cell 2   |', suffix: '' },
+      'attachment': { prefix: '[Attachment](', suffix: ')' },
+      'link': { prefix: '[', suffix: '](url)' },
+      'indent-left': { prefix: '', suffix: '' }, // Handle separately
+      'indent-right': { prefix: '  ', suffix: '' },
+    };
+
+    const formatting = formatMap[format];
+    if (formatting) {
+      // Insert at cursor position
+      setEditedTranscript(prev => prev + formatting.prefix + formatting.suffix);
+      setHasUnsavedChanges(true);
+    }
+  }, []);
+
+  // Handle recording complete from toolbar
+  const handleToolbarRecordingComplete = useCallback(async (audioUri: string, duration: number) => {
+    if (!isAuthenticated) {
+      Alert.alert('Sign In Required', 'Please sign in to add recordings.');
+      return;
+    }
+
+    // Add the audio content to the note
+    const success = await addContent({ audioUri });
+    if (success) {
+      Alert.alert('Success', 'Recording added to note.');
+    } else {
+      Alert.alert('Error', 'Failed to add recording. Please try again.');
+    }
+  }, [isAuthenticated, addContent]);
 
   // Handle add content modal submit
   const handleAddContentSubmit = useCallback(async (options: {
@@ -710,6 +779,7 @@ export default function NoteDetailScreen() {
               multiline
               blurOnSubmit
               returnKeyType="done"
+              inputAccessoryViewID={INPUT_ACCESSORY_ID}
             />
           ) : (
             <Animated.View style={{
@@ -844,27 +914,41 @@ export default function NoteDetailScreen() {
             placeholderTextColor={NotesColors.textSecondary}
             multiline
             textAlignVertical="top"
+            inputAccessoryViewID={INPUT_ACCESSORY_ID}
           />
         ) : (
           <TouchableOpacity onPress={handleEdit} activeOpacity={0.7}>
-            <Text style={styles.transcriptText}>{note.transcript}</Text>
+            <MarkdownContent content={note.transcript} />
           </TouchableOpacity>
         )}
       </Animated.ScrollView>
 
-      {/* Floating Add Button */}
-      <TouchableOpacity
-        style={styles.floatingAddButton}
-        onPress={handleAddContentPress}
-        disabled={isAppending}
-        activeOpacity={0.8}
-      >
-        {isAppending ? (
-          <ActivityIndicator size="small" color="#fff" />
-        ) : (
-          <Ionicons name="add" size={28} color="#fff" />
-        )}
-      </TouchableOpacity>
+      {/* Formatting Toolbar - appears above keyboard */}
+      {Platform.OS === 'ios' && (
+        <InputAccessoryView nativeID={INPUT_ACCESSORY_ID}>
+          <FormattingToolbar
+            inputRef={transcriptInputRef}
+            onFormat={handleFormat}
+            onRecordingComplete={handleToolbarRecordingComplete}
+          />
+        </InputAccessoryView>
+      )}
+
+      {/* Floating Mic Button - hidden when keyboard is visible */}
+      {!isKeyboardVisible && (
+        <TouchableOpacity
+          style={styles.floatingAddButton}
+          onPress={handleAddContentPress}
+          disabled={isAppending}
+          activeOpacity={0.8}
+        >
+          {isAppending ? (
+            <ActivityIndicator size="small" color="#fff" />
+          ) : (
+            <Ionicons name="mic" size={26} color="#fff" />
+          )}
+        </TouchableOpacity>
+      )}
 
       {/* Options Menu Modal */}
       <Modal

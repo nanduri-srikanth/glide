@@ -12,7 +12,11 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.snandur2.glide",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "UIBackgroundModes": [
+          "audio"
+        ],
+        "NSMicrophoneUsageDescription": "Glide needs microphone access to record voice memos"
       }
     },
     "android": {
@@ -23,7 +27,8 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.snandur2.glide"
     },
     "web": {
       "output": "static",
@@ -44,7 +49,8 @@
         }
       ],
       "expo-secure-store",
-      "expo-apple-authentication"
+      "expo-apple-authentication",
+      "expo-live-activity"
     ],
     "experiments": {
       "typedRoutes": true,

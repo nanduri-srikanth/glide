@@ -7,6 +7,7 @@ import { NotesColors } from '@/constants/theme';
 import { DraggableFolderList } from '@/components/notes/DraggableFolderList';
 import { SearchBar } from '@/components/notes/SearchBar';
 import { ComposeButton } from '@/components/notes/ComposeButton';
+import { UnifiedSearchOverlay } from '@/components/notes/UnifiedSearchOverlay';
 import { useNotes } from '@/context/NotesContext';
 import { useAuth } from '@/context/AuthContext';
 import { Folder } from '@/data/types';
@@ -27,9 +28,9 @@ export default function FoldersScreen() {
     reorderFolders,
     buildFlattenedTree,
   } = useNotes();
-  const [searchQuery, setSearchQuery] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
+  const [showSearchOverlay, setShowSearchOverlay] = useState(false);
 
   // Refresh folders when screen gains focus (after creating a note, etc.)
   useFocusEffect(
@@ -71,31 +72,36 @@ export default function FoldersScreen() {
     }));
   }, [isAuthenticated, folders, buildFlattenedTree]);
 
-  // Filter folders by search query (search in flattened list)
+  // Get folders for display (no longer filtered inline - handled by overlay)
   const filteredFolders = useMemo(() => {
-    if (!searchQuery.trim()) {
-      // When not searching, return tree structure from API if authenticated
-      if (isAuthenticated) {
-        return folders.map(convertFolder);
-      }
-      // Mock folders for unauthenticated
-      return mockFolders.map(f => ({
-        ...f,
-        sortOrder: f.sortOrder || 0,
-        depth: f.depth || 0,
-        children: [],
-      }));
+    if (isAuthenticated) {
+      return folders.map(convertFolder);
     }
-
-    // When searching, filter the flattened list
-    const query = searchQuery.toLowerCase();
-    return displayFolders.filter(folder =>
-      folder.name.toLowerCase().includes(query)
-    );
-  }, [isAuthenticated, folders, displayFolders, searchQuery, convertFolder]);
+    // Mock folders for unauthenticated
+    return mockFolders.map(f => ({
+      ...f,
+      sortOrder: f.sortOrder || 0,
+      depth: f.depth || 0,
+      children: [],
+    }));
+  }, [isAuthenticated, folders, convertFolder]);
 
   const handleFolderPress = useCallback((folder: Folder) => {
     router.push(`/notes/${folder.id}`);
+  }, [router]);
+
+  const handleSearchPress = useCallback(() => {
+    setShowSearchOverlay(true);
+  }, []);
+
+  const handleSearchSelectFolder = useCallback((folderId: string) => {
+    setShowSearchOverlay(false);
+    router.push(`/notes/${folderId}`);
+  }, [router]);
+
+  const handleSearchSelectNote = useCallback((noteId: string) => {
+    setShowSearchOverlay(false);
+    router.push(`/notes/detail/${noteId}`);
   }, [router]);
 
   const handleComposePress = () => router.push('/recording');
@@ -276,13 +282,19 @@ export default function FoldersScreen() {
         {!isEditMode && (
           <>
             <SearchBar
-              value={searchQuery}
-              onChangeText={setSearchQuery}
+              onPress={handleSearchPress}
               placeholder="Search"
             />
             <ComposeButton onPress={handleComposePress} />
           </>
         )}
+
+        <UnifiedSearchOverlay
+          visible={showSearchOverlay}
+          onClose={() => setShowSearchOverlay(false)}
+          onSelectFolder={handleSearchSelectFolder}
+          onSelectNote={handleSearchSelectNote}
+        />
       </SafeAreaView>
     </GestureHandlerRootView>
   );

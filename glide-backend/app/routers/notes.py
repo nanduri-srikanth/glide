@@ -19,6 +19,8 @@ from app.schemas.note_schemas import (
     NoteResponse,
     NoteListItem,
     NoteListResponse,
+    FolderResponse,
+    UnifiedSearchResponse,
 )
 
 router = APIRouter()
@@ -183,6 +185,93 @@ async def search_notes(
         page=page,
         per_page=per_page,
         pages=(total + per_page - 1) // per_page,
+    )
+
+
+@router.get("/search/all", response_model=UnifiedSearchResponse)
+async def unified_search(
+    q: str,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: AsyncSession = Depends(get_db),
+):
+    """Search both folders and notes, returning combined results."""
+    search_term = f"%{q}%"
+
+    # Search folders by name
+    folder_query = (
+        select(Folder)
+        .where(Folder.user_id == current_user.id)
+        .where(Folder.name.ilike(search_term))
+        .order_by(Folder.sort_order)
+        .limit(10)
+    )
+    folder_result = await db.execute(folder_query)
+    folders = folder_result.scalars().all()
+
+    # Count notes per folder for the response
+    folder_responses = []
+    for folder in folders:
+        note_count_query = select(func.count()).where(
+            Note.folder_id == folder.id,
+            Note.is_deleted == False
+        )
+        count_result = await db.execute(note_count_query)
+        note_count = count_result.scalar() or 0
+
+        folder_responses.append(FolderResponse(
+            id=folder.id,
+            name=folder.name,
+            icon=folder.icon,
+            color=folder.color,
+            is_system=folder.is_system,
+            note_count=note_count,
+            sort_order=folder.sort_order,
+            parent_id=folder.parent_id,
+            depth=folder.depth,
+            children=[],
+            created_at=folder.created_at,
+        ))
+
+    # Search notes by title or transcript
+    note_query = (
+        select(Note)
+        .where(Note.user_id == current_user.id)
+        .where(Note.is_deleted == False)
+        .where(Note.is_archived == False)
+        .where(
+            or_(
+                Note.title.ilike(search_term),
+                Note.transcript.ilike(search_term),
+            )
+        )
+        .options(selectinload(Note.actions))
+        .order_by(Note.created_at.desc())
+        .limit(20)
+    )
+    note_result = await db.execute(note_query)
+    notes = note_result.scalars().all()
+
+    note_items = [
+        NoteListItem(
+            id=note.id,
+            title=note.title,
+            preview=note.transcript[:100] if note.transcript else "",
+            duration=note.duration,
+            folder_id=note.folder_id,
+            tags=note.tags or [],
+            is_pinned=note.is_pinned,
+            action_count=len(note.actions),
+            calendar_count=sum(1 for a in note.actions if a.action_type == ActionType.CALENDAR),
+            email_count=sum(1 for a in note.actions if a.action_type == ActionType.EMAIL),
+            reminder_count=sum(1 for a in note.actions if a.action_type == ActionType.REMINDER),
+            created_at=note.created_at,
+        )
+        for note in notes
+    ]
+
+    return UnifiedSearchResponse(
+        folders=folder_responses,
+        notes=note_items,
     )
 
 

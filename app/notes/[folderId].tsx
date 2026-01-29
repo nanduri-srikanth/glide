@@ -18,6 +18,7 @@ import { SwipeableNoteCard } from '@/components/notes/SwipeableNoteCard';
 import { SearchBar } from '@/components/notes/SearchBar';
 import { ComposeButton } from '@/components/notes/ComposeButton';
 import { MoveFolderSheet } from '@/components/notes/MoveFolderSheet';
+import { UnifiedSearchOverlay } from '@/components/notes/UnifiedSearchOverlay';
 import { Note } from '@/data/types';
 import { useNotes } from '@/context/NotesContext';
 import { useAuth } from '@/context/AuthContext';
@@ -31,10 +32,10 @@ export default function NoteListScreen() {
   const { folderId } = useLocalSearchParams<{ folderId: string }>();
   const router = useRouter();
   const { isAuthenticated } = useAuth();
-  const { notes: apiNotes, folders, isLoading, error, fetchNotes, searchNotes, deleteNote, moveNote } = useNotes();
+  const { notes: apiNotes, folders, isLoading, error, fetchNotes, deleteNote, moveNote } = useNotes();
   const [refreshing, setRefreshing] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
   const [showMoveSheet, setShowMoveSheet] = useState(false);
+  const [showSearchOverlay, setShowSearchOverlay] = useState(false);
   const [noteToMove, setNoteToMove] = useState<string | null>(null);
   const [isMoving, setIsMoving] = useState(false);
 
@@ -73,9 +74,9 @@ export default function NoteListScreen() {
         transcript: n.preview || '',
         duration: n.duration || 0,
         actions: {
-          calendar: n.calendar_count > 0 ? [{ id: '1', title: 'Event', date: '', time: '' }] : [],
-          email: n.email_count > 0 ? [{ id: '1', to: '', subject: '', status: 'draft' as const }] : [],
-          reminders: n.reminder_count > 0 ? [{ id: '1', title: 'Reminder', dueDate: '' }] : [],
+          calendar: Array.from({ length: n.calendar_count }, (_, i) => ({ id: String(i + 1), title: 'Event', date: '', time: '' })),
+          email: Array.from({ length: n.email_count }, (_, i) => ({ id: String(i + 1), to: '', subject: '', status: 'draft' as const })),
+          reminders: Array.from({ length: n.reminder_count }, (_, i) => ({ id: String(i + 1), title: 'Reminder', dueDate: '' })),
           nextSteps: [],
         },
         folderId: n.folder_id || folderId || '',
@@ -86,14 +87,8 @@ export default function NoteListScreen() {
     return getNotesByFolder(folderId || '');
   }, [apiNotes, folderId, isAuthenticated]);
 
-  const filteredNotes = useMemo(() => {
-    if (!searchQuery) return notes;
-    return notes.filter(
-      (note) =>
-        note.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        note.transcript.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-  }, [notes, searchQuery]);
+  // Notes are no longer filtered inline - search is handled by the overlay
+  const filteredNotes = notes;
 
   const sections = useMemo(() => {
     const now = new Date();
@@ -149,12 +144,19 @@ export default function NoteListScreen() {
     setRefreshing(false);
   }, [isAuthenticated, folderId, isAllNotesFolder, fetchNotes]);
 
-  const handleSearch = useCallback(async (query: string) => {
-    setSearchQuery(query);
-    if (isAuthenticated && query.trim()) {
-      await searchNotes(query);
-    }
-  }, [isAuthenticated, searchNotes]);
+  const handleSearchPress = useCallback(() => {
+    setShowSearchOverlay(true);
+  }, []);
+
+  const handleSearchSelectFolder = useCallback((searchFolderId: string) => {
+    setShowSearchOverlay(false);
+    router.push(`/notes/${searchFolderId}`);
+  }, [router]);
+
+  const handleSearchSelectNote = useCallback((noteId: string) => {
+    setShowSearchOverlay(false);
+    router.push(`/notes/detail/${noteId}`);
+  }, [router]);
 
   const handleDeleteNote = useCallback(async (noteId: string) => {
     const success = await deleteNote(noteId);
@@ -246,11 +248,17 @@ export default function NoteListScreen() {
         />
 
         <SearchBar
-          value={searchQuery}
-          onChangeText={handleSearch}
-          placeholder="Search notes"
+          onPress={handleSearchPress}
+          placeholder="Search"
         />
         <ComposeButton onPress={handleComposePress} />
+
+        <UnifiedSearchOverlay
+          visible={showSearchOverlay}
+          onClose={() => setShowSearchOverlay(false)}
+          onSelectFolder={handleSearchSelectFolder}
+          onSelectNote={handleSearchSelectNote}
+        />
 
         <MoveFolderSheet
           visible={showMoveSheet}

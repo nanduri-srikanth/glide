@@ -9,14 +9,12 @@ import { Platform } from 'react-native';
 // For iOS Simulator: use localhost (maps to host machine)
 // For Android Emulator: use 10.0.2.2 (maps to host machine)
 // For Physical devices: use your machine's local IP
+const LOCAL_IP = '192.168.1.6'; // Your machine's local IP for physical devices
+
 const getDevHost = () => {
-  if (Platform.OS === 'ios') {
-    return 'localhost'; // iOS simulator
-  }
-  if (Platform.OS === 'android') {
-    return '10.0.2.2'; // Android emulator
-  }
-  return 'localhost'; // Web
+  // Use local IP for physical devices (both iOS and Android)
+  // Change to 'localhost' for iOS Simulator or '10.0.2.2' for Android Emulator
+  return LOCAL_IP;
 };
 
 export const API_BASE_URL = __DEV__

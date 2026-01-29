@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { StyleSheet, SafeAreaView, Alert, View, Text, ActivityIndicator, Animated } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -16,8 +16,9 @@ type FlowMode = 'idle' | 'quick' | 'add-to-note' | 'into-folder';
 
 export default function RecordingScreen() {
   const router = useRouter();
-  const { folderId } = useLocalSearchParams<{ folderId?: string }>();
+  const { folderId, autoStart } = useLocalSearchParams<{ folderId?: string; autoStart?: string }>();
   const { isAuthenticated } = useAuth();
+  const hasAutoStarted = useRef(false);
   const { fetchFolders } = useNotes();
   const {
     isRecording,
@@ -60,6 +61,18 @@ export default function RecordingScreen() {
   // Animation values for success screen
   const successScale = useRef(new Animated.Value(0)).current;
   const successOpacity = useRef(new Animated.Value(0)).current;
+
+  // Auto-start recording if opened via deep link (glide://record)
+  useEffect(() => {
+    if (autoStart === 'true' && !hasAutoStarted.current && !isRecording) {
+      hasAutoStarted.current = true;
+      // Small delay to ensure component is fully mounted
+      const timer = setTimeout(() => {
+        startRecording();
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [autoStart, isRecording, startRecording]);
 
   // Success animation and navigation
   const showSuccessAndNavigateBack = (message: string) => {

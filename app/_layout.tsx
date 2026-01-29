@@ -1,14 +1,32 @@
-import { useEffect } from 'react';
+import { useEffect, useCallback, useRef } from 'react';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import * as Linking from 'expo-linking';
 import 'react-native-reanimated';
 
 import { NotesColors } from '@/constants/theme';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { NotesProvider } from '@/context/NotesContext';
 import { useNavigationPersistence } from '@/hooks/useNavigationPersistence';
+
+// Deep link URL parsing
+const parseDeepLink = (url: string): { action: string; params: Record<string, string> } | null => {
+  try {
+    const parsed = Linking.parse(url);
+    // Handle glide://record or glide://record?param=value
+    if (parsed.path === 'record' || parsed.hostname === 'record') {
+      return {
+        action: 'record',
+        params: (parsed.queryParams || {}) as Record<string, string>,
+      };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+};
 
 // DEV MODE: Set to true to skip authentication for testing
 const DEV_SKIP_AUTH = true;
@@ -34,9 +52,67 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth();
   const segments = useSegments();
   const router = useRouter();
+  const pendingDeepLink = useRef<string | null>(null);
+  const hasHandledInitialLink = useRef(false);
 
   // Persist and restore navigation state (only when auth is ready)
   useNavigationPersistence(!isLoading);
+
+  // Handle deep link navigation
+  const handleDeepLink = useCallback((url: string) => {
+    const parsed = parseDeepLink(url);
+    if (parsed?.action === 'record') {
+      // Navigate to recording screen with auto-start
+      router.push({
+        pathname: '/recording',
+        params: { autoStart: 'true' },
+      });
+    }
+  }, [router]);
+
+  // Listen for deep links
+  useEffect(() => {
+    // Handle initial URL when app opens from deep link
+    const handleInitialURL = async () => {
+      if (hasHandledInitialLink.current) return;
+
+      const initialURL = await Linking.getInitialURL();
+      if (initialURL) {
+        hasHandledInitialLink.current = true;
+        if (isLoading) {
+          // Store for later when auth is ready
+          pendingDeepLink.current = initialURL;
+        } else {
+          handleDeepLink(initialURL);
+        }
+      }
+    };
+
+    handleInitialURL();
+
+    // Listen for URL events while app is running
+    const subscription = Linking.addEventListener('url', (event) => {
+      if (isLoading) {
+        pendingDeepLink.current = event.url;
+      } else {
+        handleDeepLink(event.url);
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [isLoading, handleDeepLink]);
+
+  // Handle pending deep link after auth loads
+  useEffect(() => {
+    if (!isLoading && pendingDeepLink.current) {
+      const url = pendingDeepLink.current;
+      pendingDeepLink.current = null;
+      // Small delay to ensure navigation is ready
+      setTimeout(() => handleDeepLink(url), 100);
+    }
+  }, [isLoading, handleDeepLink]);
 
   useEffect(() => {
     // Skip auth redirect in dev mode (but still wait for loading)

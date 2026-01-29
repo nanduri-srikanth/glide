@@ -132,5 +132,11 @@ class NoteSearchParams(BaseModel):
     per_page: int = Field(default=20, ge=1, le=100)
 
 
+class UnifiedSearchResponse(BaseModel):
+    """Schema for unified search response (folders + notes)."""
+    folders: List[FolderResponse]
+    notes: List[NoteListItem]
+
+
 # Resolve forward references for recursive FolderResponse
 FolderResponse.model_rebuild()

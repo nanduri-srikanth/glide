@@ -63,32 +63,107 @@ Transcript:
 {context_str}
 
 ## SUMMARY INSTRUCTIONS
-You are summarizing a voice memo transcript for the user who recorded it. The input may be rambling, non-linear, or stream-of-consciousness—this is expected.
+This is YOUR note—write it as a refined version of your own thoughts, not an observer's description.
 
-### Tone Calibration
-Before summarizing, assess the transcript:
-- **Formality**: casual/conversational ↔ professional/precise
-- **Emotional register**: venting/processing ↔ analytical/neutral
-- **Technical density**: everyday language ↔ domain-specific jargon
-- **Energy**: reflective/uncertain ↔ decisive/energized
+### Step 1: Detect the Note Type
+First, identify what kind of note this is:
 
-Mirror these qualities. If they're frustrated, don't sanitize. If analytical with specific terminology, match that precision. The summary should feel like *their* thinking, clarified.
+**MEETING** — Discussion with others, decisions made, follow-ups needed
+**BRAINSTORM** — Exploring ideas, possibilities, creative thinking
+**TASKS** — List of things to do, errands, action items
+**PLANNING** — Strategy, goals, weighing options, making decisions
+**REFLECTION** — Personal thoughts, processing feelings, journaling
+**TECHNICAL** — Problem-solving, debugging, implementation details
+**QUICK_NOTE** — Brief reminder or single thought
 
-### What to Capture
-1. **Core topics/ideas** — what was this memo actually about?
-2. **Key details and context** — preserve specifics (names, numbers, reasoning) that matter
-3. **Decisions, conclusions, or realizations** — anything that crystallized
-4. **Unresolved threads** — half-formed thoughts or open questions
+### Step 2: Format According to Type
 
-### Handling Ambiguity
-If something is unclear, flag it inline: *[unclear: sounded like "call Mike" but uncertain who]*
+**MEETING format:**
+```
+## Context
+Who, what, when — one line
 
-### Length Scaling
-- Quick thought (< 1 min): 2-4 sentences
-- Medium memo (1-5 min): 1-2 paragraphs
-- Long ramble (5+ min): structured summary with natural paragraph breaks
+## Key Points
+- Main discussion topics as bullets
+- Decisions made (prefix with ✓)
+- Concerns raised
 
-Write in natural prose mirroring how the user thinks. Use structure only when genuinely needed. Do NOT use bullet points unless the user was explicitly listing things.
+## Follow-ups
+What needs to happen next (captured as reminders separately)
+```
+
+**BRAINSTORM format:**
+```
+## The Idea
+Core concept in 1-2 sentences
+
+## Exploration
+Natural prose exploring the idea, connections, possibilities.
+Multiple paragraphs for different angles.
+
+## Open Questions
+- Unresolved aspects to think through
+```
+
+**TASKS format:**
+```
+## Overview
+What this batch of tasks is about
+
+## Tasks
+- [ ] Task 1
+- [ ] Task 2
+- [ ] Task 3
+
+(Individual tasks also captured as reminders)
+```
+
+**PLANNING format:**
+```
+## Goal
+What I'm trying to achieve
+
+## Options Considered
+**Option A:** description, pros/cons
+**Option B:** description, pros/cons
+
+## Decision / Next Step
+What I decided or need to decide
+```
+
+**REFLECTION format:**
+Natural flowing prose. Paragraph breaks between different threads of thought.
+Preserve emotional context. No forced structure—let it breathe.
+
+**TECHNICAL format:**
+```
+## Problem
+What I'm trying to solve
+
+## Approach
+How I'm thinking about it / what I tried
+
+## Details
+Technical specifics, code concepts, implementation notes
+
+## Status
+Where things stand, what's next
+```
+
+**QUICK_NOTE format:**
+Just the essential info, 2-4 sentences. No headers needed.
+
+### Voice & Tone
+- Match the original register (casual, professional, frustrated, excited)
+- First-person where natural
+- Preserve personality—don't sanitize or formalize
+- Keep nuance and caveats
+
+### Comprehensiveness
+- Capture specifics: names, numbers, dates, exact phrasing
+- Include reasoning, not just conclusions
+- Note uncertainties: *[unclear: audio garbled here]*
+- Don't compress into vague summaries
 
 ## PATTERN RECOGNITION - Look for these specific patterns:
 
@@ -487,36 +562,104 @@ Your job is to merge these into ONE coherent narrative that flows naturally.
 {context_str}
 
 ## NARRATIVE & SUMMARY INSTRUCTIONS
-You are summarizing a voice memo for the user who recorded it. The input may be rambling, non-linear, or stream-of-consciousness—this is expected.
+This is YOUR note—write as a refined version of your own thinking, not a third-party description.
 
-### Tone Calibration
-Before writing, assess the input:
-- **Formality**: casual/conversational ↔ professional/precise
-- **Emotional register**: venting/processing ↔ analytical/neutral
-- **Technical density**: everyday language ↔ domain-specific jargon
-- **Energy**: reflective/uncertain ↔ decisive/energized
+### Step 1: Detect the Note Type
+First, identify what kind of note this is:
 
-Mirror these qualities in BOTH the narrative and summary. If they're swearing and frustrated, don't sanitize. If analytical with specific terminology, match that precision. It should feel like *their* thinking, clarified—not translated into someone else's voice.
+**MEETING** — Discussion with others, decisions made, follow-ups needed
+**BRAINSTORM** — Exploring ideas, possibilities, creative thinking
+**TASKS** — List of things to do, errands, action items
+**PLANNING** — Strategy, goals, weighing options, making decisions
+**REFLECTION** — Personal thoughts, processing feelings, journaling
+**TECHNICAL** — Problem-solving, debugging, implementation details
+**QUICK_NOTE** — Brief reminder or single thought
 
-### What to Capture
-1. **Core topics/ideas** — what was this memo actually about?
-2. **Key details and context** — preserve specifics (names, numbers, reasoning) that matter
-3. **Decisions, conclusions, or realizations** — anything that crystallized
-4. **Unresolved threads** — half-formed thoughts or open questions
+### Step 2: Format the Narrative According to Type
 
-### Handling Ambiguity
-If something is unclear, flag it inline: *[unclear: sounded like "call Mike" but uncertain who]*
+**MEETING format:**
+```
+## Context
+Who, what, when — one line
 
-### Length Scaling for Summary
-- Quick thought (< 1 min): 2-4 sentences
-- Medium memo (1-5 min): 1-2 paragraphs
-- Long ramble (5+ min): structured summary with paragraph breaks, potentially with a 1-2 sentence "gist" up top
+## Key Points
+- Main discussion topics as bullets
+- Decisions made (prefix with ✓)
+- Concerns raised
 
-### Format
-- Write in natural prose mirroring how the user thinks
-- Use structure only when genuinely needed for clarity
-- Do NOT use bullet points unless the user was explicitly listing things
-- Do NOT extract action items in the summary (handled separately)
+## Follow-ups
+What needs to happen next
+```
+
+**BRAINSTORM format:**
+```
+## The Idea
+Core concept in 1-2 sentences
+
+## Exploration
+Natural prose exploring the idea, connections, possibilities.
+Multiple paragraphs for different angles.
+
+## Open Questions
+- Unresolved aspects to think through
+```
+
+**TASKS format:**
+```
+## Overview
+What this batch of tasks is about
+
+## Tasks
+- [ ] Task 1
+- [ ] Task 2
+- [ ] Task 3
+```
+
+**PLANNING format:**
+```
+## Goal
+What I'm trying to achieve
+
+## Options Considered
+**Option A:** description, pros/cons
+**Option B:** description, pros/cons
+
+## Decision / Next Step
+What I decided or need to decide
+```
+
+**REFLECTION format:**
+Natural flowing prose. Paragraph breaks between different threads of thought.
+Preserve emotional context. No forced structure—let it breathe.
+
+**TECHNICAL format:**
+```
+## Problem
+What I'm trying to solve
+
+## Approach
+How I'm thinking about it / what I tried
+
+## Details
+Technical specifics, implementation notes
+
+## Status
+Where things stand, what's next
+```
+
+**QUICK_NOTE format:**
+Just the essential info, 2-4 sentences. No headers needed.
+
+### Voice & Tone
+- Match the original register (casual, professional, frustrated, excited)
+- First-person where natural ("I need to..." not "The user needs to...")
+- Preserve personality—don't sanitize or formalize
+- Keep nuance, caveats, and emotional context
+
+### Comprehensiveness
+- Capture specifics: names, numbers, dates, exact phrasing
+- Include reasoning, not just conclusions
+- Note uncertainties: *[unclear: audio garbled here]*
 
 ## NARRATIVE RULES
 1. Create a single, cohesive narrative that integrates both inputs naturally
@@ -940,53 +1083,56 @@ IMPORTANT:
 
         # Determine expected length based on duration
         if duration_seconds < 60:
-            length_guidance = "Keep it to 2-4 sentences."
+            length_guidance = "3-5 sentences capturing the complete thought."
         elif duration_seconds < 300:
-            length_guidance = "Use 1-2 paragraphs."
+            length_guidance = "2-3 substantial paragraphs preserving the full reasoning and context."
         else:
-            length_guidance = "Use structured paragraphs with a 1-2 sentence gist up top if helpful."
+            length_guidance = "4-6 paragraphs with natural sections. Capture everything important—this is a longer note and deserves a comprehensive summary."
 
-        prompt = f"""You are summarizing a voice memo transcript for the user who recorded it. The input may be rambling, non-linear, or stream-of-consciousness—this is expected.
+        prompt = f"""This is YOUR note—write a refined, well-structured version of your own thinking.
 
 TRANSCRIPT:
 {transcript}
 
-## Tone Calibration
-Before summarizing, assess the transcript:
-- **Formality**: casual/conversational ↔ professional/precise
-- **Emotional register**: venting/processing ↔ analytical/neutral
-- **Technical density**: everyday language ↔ domain-specific jargon
-- **Energy**: reflective/uncertain ↔ decisive/energized
+## Step 1: Detect the Note Type
+First, identify what kind of note this is:
+- MEETING — Discussion with others, decisions, follow-ups
+- BRAINSTORM — Exploring ideas, possibilities, creative thinking
+- TASKS — List of things to do, errands, action items
+- PLANNING — Strategy, goals, weighing options
+- REFLECTION — Personal thoughts, processing feelings
+- TECHNICAL — Problem-solving, debugging, implementation
+- QUICK_NOTE — Brief reminder or single thought
 
-Mirror these qualities in your summary. If they're swearing and frustrated, don't sanitize it. If they're in analytical mode with specific terminology, match that precision. The summary should feel like *their* thinking, clarified—not translated into someone else's voice.
+## Step 2: Format According to Type
 
-## What to Capture
-1. **Core topics/ideas** — what was this memo actually about?
-2. **Key details and context** — preserve specifics (names, numbers, reasoning, concerns) that matter for future reference
-3. **Decisions, conclusions, or realizations** — anything that crystallized during the memo
-4. **Unresolved threads** — half-formed thoughts or open questions they raised
+For MEETING: Use "## Context", "## Key Points" (bullets), "## Follow-ups"
+For BRAINSTORM: Use "## The Idea", "## Exploration" (prose), "## Open Questions"
+For TASKS: Use "## Overview", "## Tasks" (checkbox list)
+For PLANNING: Use "## Goal", "## Options Considered", "## Decision"
+For REFLECTION: Natural flowing prose with paragraph breaks, no headers
+For TECHNICAL: Use "## Problem", "## Approach", "## Details", "## Status"
+For QUICK_NOTE: Just 2-4 sentences, no headers needed
 
-## Handling Ambiguity
-If something is unclear—garbled audio, incomplete thought, ambiguous reference—flag it inline:
-*[unclear: sounded like "call Mike" but uncertain who Mike refers to]*
-*[incomplete thought: started comparing two options but trailed off]*
+## Voice & Tone
+- Same voice and personality as the original
+- First-person where natural
+- Preserve emotional context (frustration, excitement, uncertainty)
+- Don't sanitize or formalize
 
-Don't guess silently. Surface uncertainty so the user can clarify later.
+## Comprehensiveness
+- Capture specifics: names, numbers, dates, exact phrasing
+- Include reasoning, not just conclusions
+- Note uncertainties: *[unclear: audio garbled here]*
 
 ## Length
 {length_guidance}
 
-## Format
-- Write in natural prose that mirrors how the user thinks
-- Use structure (paragraph breaks, occasional headers) only when genuinely needed for clarity
-- Do NOT use bullet points unless the user was explicitly listing things
-- Do NOT extract action items (handled separately)
-
-Return only the summary text, no JSON or additional formatting."""
+Return only the formatted note text (with markdown headers/bullets as appropriate for the type)."""
 
         response = self.client.chat.completions.create(
             model=self.MODEL,
-            max_tokens=500,
+            max_tokens=1000,
             messages=[{"role": "user", "content": prompt}]
         )
 

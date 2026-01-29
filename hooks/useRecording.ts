@@ -1,10 +1,12 @@
 /**
  * useRecording Hook - Audio recording with expo-av
+ * Includes Live Activity support for Dynamic Island
  */
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { Audio } from 'expo-av';
 import { voiceService, VoiceProcessingResponse, SynthesisResponse } from '@/services/voice';
+import { useLiveActivity } from './useLiveActivity';
 
 interface RecordingState {
   isRecording: boolean;
@@ -28,6 +30,14 @@ export function useRecording() {
   const recordingRef = useRef<Audio.Recording | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Live Activity for Dynamic Island
+  const {
+    startRecordingActivity,
+    updateRecordingActivity,
+    stopRecordingActivity,
+    cancelRecordingActivity,
+  } = useLiveActivity();
+
   useEffect(() => {
     requestPermissions();
     return () => cleanup();
@@ -50,7 +60,11 @@ export function useRecording() {
   const startRecording = useCallback(async () => {
     try {
       setError(null);
-      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+        staysActiveInBackground: true,  // Continue recording when app is backgrounded
+      });
       const { recording } = await Audio.Recording.createAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
       recordingRef.current = recording;
 
@@ -58,28 +72,36 @@ export function useRecording() {
       timerRef.current = setInterval(() => {
         setState(prev => ({ ...prev, duration: prev.duration + 1 }));
       }, 1000);
+
+      // Start Live Activity for Dynamic Island
+      await startRecordingActivity();
     } catch (err) {
       setError('Failed to start recording');
     }
-  }, []);
+  }, [startRecordingActivity]);
 
   const stopRecording = useCallback(async (): Promise<string | null> => {
     try {
       if (!recordingRef.current) return null;
       if (timerRef.current) clearInterval(timerRef.current);
 
+      const finalDuration = state.duration;
       await recordingRef.current.stopAndUnloadAsync();
       const uri = recordingRef.current.getURI();
       await Audio.setAudioModeAsync({ allowsRecordingIOS: false });
 
       recordingRef.current = null;
       setState(prev => ({ ...prev, isRecording: false, isPaused: false, uri }));
+
+      // Stop Live Activity with final duration
+      await stopRecordingActivity(finalDuration);
+
       return uri;
     } catch (err) {
       setError('Failed to stop recording');
       return null;
     }
-  }, []);
+  }, [state.duration, stopRecordingActivity]);
 
   const pauseRecording = useCallback(async () => {
     try {
@@ -87,10 +109,13 @@ export function useRecording() {
       await recordingRef.current.pauseAsync();
       if (timerRef.current) clearInterval(timerRef.current);
       setState(prev => ({ ...prev, isPaused: true }));
+
+      // Update Live Activity to show paused state
+      await updateRecordingActivity(true, state.duration);
     } catch (err) {
       setError('Failed to pause recording');
     }
-  }, []);
+  }, [state.duration, updateRecordingActivity]);
 
   const resumeRecording = useCallback(async () => {
     try {
@@ -100,15 +125,21 @@ export function useRecording() {
         setState(prev => ({ ...prev, duration: prev.duration + 1 }));
       }, 1000);
       setState(prev => ({ ...prev, isPaused: false }));
+
+      // Update Live Activity to show recording state
+      await updateRecordingActivity(false, state.duration);
     } catch (err) {
       setError('Failed to resume recording');
     }
-  }, []);
+  }, [state.duration, updateRecordingActivity]);
 
   const cancelRecording = useCallback(async () => {
     cleanup();
     setState({ isRecording: false, isPaused: false, duration: 0, uri: null });
-  }, []);
+
+    // Cancel Live Activity
+    await cancelRecordingActivity();
+  }, [cancelRecordingActivity]);
 
   const processRecording = useCallback(async (folderId?: string, userNotes?: string): Promise<VoiceProcessingResponse | null> => {
     if (!state.uri) {
@@ -190,12 +221,15 @@ export function useRecording() {
     }
   }, [state.uri]);
 
-  const resetState = useCallback(() => {
+  const resetState = useCallback(async () => {
     cleanup();
     setState({ isRecording: false, isPaused: false, duration: 0, uri: null });
     setError(null);
     setIsProcessing(false);
-  }, []);
+
+    // Cancel any active Live Activity
+    await cancelRecordingActivity();
+  }, [cancelRecordingActivity]);
 
   return {
     isRecording: state.isRecording,
