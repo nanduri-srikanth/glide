@@ -433,7 +433,7 @@ const styles = StyleSheet.create({
     marginTop: -2,
   },
   userBadge: {
-    backgroundColor: 'rgba(98, 69, 135, 0.3)',
+    backgroundColor: 'NotesColors.aiPanelBorder',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
@@ -506,7 +506,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: 'rgba(98, 69, 135, 0.3)',
+    backgroundColor: 'NotesColors.aiPanelBorder',
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 6,

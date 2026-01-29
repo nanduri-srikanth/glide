@@ -56,13 +56,35 @@ export function MoveFolderSheet({
     }
   }, [visible]);
 
+  // Map SF Symbol names to Ionicons equivalents
+  const mapIconToIonicons = (icon: string): string => {
+    const iconMap: Record<string, string> = {
+      'folder.fill': 'folder',
+      'folder': 'folder-outline',
+      'briefcase.fill': 'briefcase',
+      'briefcase': 'briefcase-outline',
+      'person.fill': 'person',
+      'person': 'person-outline',
+      'lightbulb.fill': 'bulb',
+      'lightbulb': 'bulb-outline',
+      'calendar': 'calendar-outline',
+      'star.fill': 'star',
+      'star': 'star-outline',
+      'heart.fill': 'heart',
+      'heart': 'heart-outline',
+      'house.fill': 'home',
+      'house': 'home-outline',
+    };
+    return iconMap[icon] || icon || 'folder-outline';
+  };
+
   // Filter out "All Notes" and current folder
   const displayFolders: Folder[] = folders
     .filter(f => f.name !== 'All Notes' && f.id !== currentFolderId)
     .map(f => ({
       id: f.id,
       name: f.name,
-      icon: f.icon || 'folder',
+      icon: mapIconToIonicons(f.icon),
       noteCount: f.note_count,
       color: f.color || undefined,
       isSystem: f.is_system,
@@ -198,7 +220,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: 'rgba(98, 69, 135, 0.15)',
+    backgroundColor: NotesColors.aiPanelBackground,
     justifyContent: 'center',
     alignItems: 'center',
   },

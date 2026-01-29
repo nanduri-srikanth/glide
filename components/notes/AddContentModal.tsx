@@ -372,7 +372,7 @@ const styles = StyleSheet.create({
   audioBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(98, 69, 135, 0.2)',
+    backgroundColor: 'NotesColors.aiPanelBackground',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 12,

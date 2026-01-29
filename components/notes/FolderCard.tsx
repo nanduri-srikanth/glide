@@ -55,7 +55,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 8,
-    backgroundColor: 'rgba(98, 69, 135, 0.2)',
+    backgroundColor: 'NotesColors.aiPanelBackground',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
