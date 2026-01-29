@@ -31,7 +31,15 @@ export default function NotesLayout() {
           },
           headerLeft: () => (
             <TouchableOpacity
-              onPress={() => router.back()}
+              onPress={() => {
+                if (router.canDismiss()) {
+                  router.dismiss();
+                } else if (router.canGoBack()) {
+                  router.back();
+                } else {
+                  router.navigate('/');
+                }
+              }}
               style={{ flexDirection: 'row', alignItems: 'center', marginLeft: -8 }}
             >
               <Ionicons name="chevron-back" size={28} color={NotesColors.primary} />
@@ -44,7 +52,10 @@ export default function NotesLayout() {
         name="detail/[noteId]"
         options={{
           title: '',
-          headerTransparent: true,
+          headerBackVisible: false,
+          headerShadowVisible: false,
+          gestureEnabled: true,
+          fullScreenGestureEnabled: true,
         }}
       />
     </Stack>

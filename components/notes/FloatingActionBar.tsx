@@ -21,7 +21,6 @@ export interface ActionCounts {
   calendar: number;
   email: number;
   reminders: number;
-  nextSteps: number;
 }
 
 interface FloatingActionBarProps {
@@ -39,7 +38,7 @@ export function FloatingActionBar({
 }: FloatingActionBarProps) {
   const rotateAnim = useRef(new Animated.Value(0)).current;
 
-  const totalActions = counts.calendar + counts.email + counts.reminders + counts.nextSteps;
+  const totalActions = counts.calendar + counts.email + counts.reminders;
 
   // Animate chevron rotation
   useEffect(() => {
@@ -89,12 +88,6 @@ export function FloatingActionBar({
             <View style={styles.badge}>
               <Ionicons name="alarm" size={14} color={NotesColors.reminderBadge} />
               <Text style={styles.badgeCount}>{counts.reminders}</Text>
-            </View>
-          )}
-          {counts.nextSteps > 0 && (
-            <View style={styles.badge}>
-              <Ionicons name="play-forward" size={14} color={NotesColors.primary} />
-              <Text style={styles.badgeCount}>{counts.nextSteps}</Text>
             </View>
           )}
         </View>
@@ -159,7 +152,7 @@ const styles = StyleSheet.create({
   },
   expandedContent: {
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(255, 255, 255, 0.1)',
+    borderTopColor: 'rgba(0, 0, 0, 0.1)',
     paddingHorizontal: 16,
     paddingVertical: 12,
   },

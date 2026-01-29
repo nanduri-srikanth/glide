@@ -14,7 +14,9 @@ import {
   Animated,
   Switch,
   ActivityIndicator,
+  ScrollView,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { NotesColors } from '@/constants/theme';
 import { useRecording } from '@/hooks/useRecording';
@@ -104,6 +106,7 @@ export function AddContentModal({
   const [textInput, setTextInput] = useState('');
   const [forceResynthesize, setForceResynthesize] = useState(false);
   const textInputRef = useRef<TextInput>(null);
+  const insets = useSafeAreaInsets();
 
   const {
     isRecording,
@@ -176,12 +179,12 @@ export function AddContentModal({
       animationType="slide"
       onRequestClose={onClose}
     >
-      <View style={styles.overlay}>
-        <KeyboardAvoidingView
-          style={styles.modalContainer}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        >
-          <View style={styles.modal}>
+      <KeyboardAvoidingView
+        style={styles.overlay}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <View style={styles.modalContainer}>
+          <View style={[styles.modal, { paddingBottom: Math.max(insets.bottom, 20) }]}>
             {/* Header */}
             <View style={styles.header}>
               <TouchableOpacity
@@ -212,7 +215,11 @@ export function AddContentModal({
                 </View>
               </View>
             ) : (
-              <>
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                bounces={false}
+              >
                 {/* Text input */}
                 <View style={styles.textContainer}>
                   <TextInput
@@ -323,11 +330,11 @@ export function AddContentModal({
                     />
                   </TouchableOpacity>
                 </View>
-              </>
+              </ScrollView>
             )}
           </View>
-        </KeyboardAvoidingView>
-      </View>
+        </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -339,14 +346,14 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalContainer: {
+    flex: 1,
     justifyContent: 'flex-end',
   },
   modal: {
     backgroundColor: NotesColors.card,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    paddingBottom: 34,
-    maxHeight: '85%',
+    maxHeight: '90%',
   },
   header: {
     flexDirection: 'row',

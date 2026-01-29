@@ -4,7 +4,6 @@ import {
   View,
   Text,
   TextInput,
-  ScrollView,
   SafeAreaView,
   TouchableOpacity,
   ActivityIndicator,
@@ -12,6 +11,7 @@ import {
   Keyboard,
   Modal,
   Pressable,
+  Animated,
 } from 'react-native';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -175,6 +175,7 @@ export default function NoteDetailScreen() {
   const [showExitConfirmModal, setShowExitConfirmModal] = useState(false);
   const [showDraftRecoveryModal, setShowDraftRecoveryModal] = useState(false);
   const [pendingNavigationAction, setPendingNavigationAction] = useState<(() => void) | null>(null);
+  const [showOptionsMenu, setShowOptionsMenu] = useState(false);
 
   // Edit mode state
   const [isEditing, setIsEditing] = useState(false);
@@ -185,10 +186,31 @@ export default function NoteDetailScreen() {
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const titleInputRef = useRef<TextInput>(null);
   const transcriptInputRef = useRef<TextInput>(null);
+  const scrollY = useRef(new Animated.Value(0)).current;
 
   // Title auto-generation tracking
   const [userEditedTitle, setUserEditedTitle] = useState(false);
+  // Track if either input is focused
+  const [isTitleFocused, setIsTitleFocused] = useState(false);
+  const [isTranscriptFocused, setIsTranscriptFocused] = useState(false);
   const originalTitleRef = useRef<string>(''); // For reverting if user clears title
+
+  // Animated header interpolations (derived values - not hooks)
+  const headerOpacity = scrollY.interpolate({
+    inputRange: [0, 80, 120],
+    outputRange: [1, 0.5, 0],
+    extrapolate: 'clamp',
+  });
+  const titleScale = scrollY.interpolate({
+    inputRange: [0, 120],
+    outputRange: [1, 0.75],
+    extrapolate: 'clamp',
+  });
+  const titleTranslateY = scrollY.interpolate({
+    inputRange: [0, 120],
+    outputRange: [0, -20],
+    extrapolate: 'clamp',
+  });
 
   // Initialize edit fields when note loads or changes
   useEffect(() => {
@@ -304,10 +326,6 @@ export default function NoteDetailScreen() {
     Keyboard.dismiss();
     setIsEditing(false);
   }, [hasUnsavedChanges, editedTitle, editedTranscript, updateNote]);
-
-  // Track if either input is focused
-  const [isTitleFocused, setIsTitleFocused] = useState(false);
-  const [isTranscriptFocused, setIsTranscriptFocused] = useState(false);
 
   // Handle blur - exit edit mode if neither field is focused
   const handleTitleBlur = useCallback(() => {
@@ -533,7 +551,7 @@ export default function NoteDetailScreen() {
   };
 
   // Handle re-synthesize - regenerate narrative from input history
-  const handleResynthesize = useCallback(async () => {
+  const handleResynthesize = () => {
     if (!isAuthenticated) {
       Alert.alert('Sign In Required', 'Please sign in to use AI features.');
       return;
@@ -557,7 +575,7 @@ export default function NoteDetailScreen() {
         },
       ]
     );
-  }, [isAuthenticated, resynthesizeNote]);
+  };
 
 
   const handleDelete = () => {
@@ -589,7 +607,6 @@ export default function NoteDetailScreen() {
     calendar: editableCalendarActions.filter(a => !a.isDeleted).length,
     email: editableEmailActions.filter(a => !a.isDeleted).length,
     reminders: editableReminderActions.filter(a => !a.isDeleted).length,
-    nextSteps: editableNextStepActions.filter(a => !a.isDeleted).length,
   };
 
   return (
@@ -599,15 +616,37 @@ export default function NoteDetailScreen() {
           title: '',
           headerTransparent: false,
           headerStyle: { backgroundColor: NotesColors.background },
+          headerLeft: () => (
+            <TouchableOpacity
+              onPress={() => {
+                if (router.canDismiss()) {
+                  router.dismiss();
+                } else if (router.canGoBack()) {
+                  router.back();
+                } else {
+                  router.navigate('/');
+                }
+              }}
+              style={styles.headerBackButton}
+            >
+              <Ionicons name="chevron-back" size={28} color={NotesColors.primary} />
+              <Text style={styles.headerBackText}>Back</Text>
+            </TouchableOpacity>
+          ),
           headerRight: () => (
             isEditing ? (
               <TouchableOpacity onPress={handleDoneEditing} style={styles.headerButton}>
                 <Text style={styles.doneButtonText}>Done</Text>
               </TouchableOpacity>
             ) : (
-              <TouchableOpacity onPress={handleShare} style={styles.headerButton}>
-                <Ionicons name="share-outline" size={24} color={NotesColors.primary} />
-              </TouchableOpacity>
+              <View style={styles.headerRightContainer}>
+                <TouchableOpacity onPress={handleShare} style={styles.headerButton}>
+                  <Ionicons name="share-outline" size={24} color={NotesColors.primary} />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => setShowOptionsMenu(true)} style={styles.headerButton}>
+                  <Ionicons name="ellipsis-vertical" size={24} color={NotesColors.primary} />
+                </TouchableOpacity>
+              </View>
             )
           ),
         }}
@@ -629,12 +668,17 @@ export default function NoteDetailScreen() {
         </View>
       )}
 
-      <ScrollView
+      <Animated.ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        onScroll={Animated.event(
+          [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+          { useNativeDriver: false }
+        )}
+        scrollEventThrottle={16}
       >
-        {/* Header */}
+        {/* Header with animated collapsing */}
         <View style={styles.header}>
           {isEditing ? (
             <TextInput
@@ -651,11 +695,19 @@ export default function NoteDetailScreen() {
               returnKeyType="done"
             />
           ) : (
-            <TouchableOpacity onPress={handleEdit} activeOpacity={0.7}>
-              <Text style={styles.title}>{note.title}</Text>
-            </TouchableOpacity>
+            <Animated.View style={{
+              transform: [
+                { scale: titleScale },
+                { translateY: titleTranslateY }
+              ],
+              transformOrigin: 'left top',
+            }}>
+              <TouchableOpacity onPress={handleEdit} activeOpacity={0.7}>
+                <Text style={styles.title}>{note.title}</Text>
+              </TouchableOpacity>
+            </Animated.View>
           )}
-          <View style={styles.metadata}>
+          <Animated.View style={[styles.metadata, { opacity: headerOpacity }]}>
             <View style={styles.metaItem}>
               <Ionicons name="time-outline" size={14} color={NotesColors.textSecondary} />
               <Text style={styles.metaText}>{formatFullDate(note.timestamp)}</Text>
@@ -664,17 +716,17 @@ export default function NoteDetailScreen() {
               <Ionicons name="mic-outline" size={14} color={NotesColors.textSecondary} />
               <Text style={styles.metaText}>{formatDuration(note.duration)} recording</Text>
             </View>
-          </View>
+          </Animated.View>
 
           {/* Tags */}
           {note.tags.length > 0 && (
-            <View style={styles.tagsContainer}>
+            <Animated.View style={[styles.tagsContainer, { opacity: headerOpacity }]}>
               {note.tags.map((tag, index) => (
                 <View key={index} style={styles.tag}>
                   <Text style={styles.tagText}>#{tag}</Text>
                 </View>
               ))}
-            </View>
+            </Animated.View>
           )}
         </View>
 
@@ -688,7 +740,6 @@ export default function NoteDetailScreen() {
             calendarActions={editableCalendarActions}
             emailActions={editableEmailActions}
             reminderActions={editableReminderActions}
-            nextStepActions={editableNextStepActions}
             onUpdateAction={handleUpdateAction}
             onDeleteAction={handleDeleteAction}
             onAddAction={handleAddAction}
@@ -782,46 +833,59 @@ export default function NoteDetailScreen() {
             <Text style={styles.transcriptText}>{note.transcript}</Text>
           </TouchableOpacity>
         )}
-      </ScrollView>
+      </Animated.ScrollView>
 
-      {/* Bottom Toolbar */}
-      <View style={styles.toolbar}>
-        <TouchableOpacity style={styles.toolbarButton} onPress={handleEdit}>
-          <Ionicons name="create-outline" size={24} color={NotesColors.primary} />
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.toolbarButton}
-          onPress={handleAddContentPress}
-          disabled={isAppending}
+      {/* Floating Add Button */}
+      <TouchableOpacity
+        style={styles.floatingAddButton}
+        onPress={handleAddContentPress}
+        disabled={isAppending}
+        activeOpacity={0.8}
+      >
+        {isAppending ? (
+          <ActivityIndicator size="small" color="#fff" />
+        ) : (
+          <Ionicons name="add" size={28} color="#fff" />
+        )}
+      </TouchableOpacity>
+
+      {/* Options Menu Modal */}
+      <Modal
+        visible={showOptionsMenu}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowOptionsMenu(false)}
+      >
+        <Pressable
+          style={styles.optionsOverlay}
+          onPress={() => setShowOptionsMenu(false)}
         >
-          {isAppending ? (
-            <ActivityIndicator size="small" color={NotesColors.primary} />
-          ) : (
-            <Ionicons name="add-circle-outline" size={24} color={NotesColors.primary} />
-          )}
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.toolbarButton}
-          onPress={handleResynthesize}
-          disabled={isAppending}
-        >
-          <Ionicons name="sparkles-outline" size={24} color={NotesColors.primary} />
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.toolbarButton}>
-          <Ionicons name="share-outline" size={24} color={NotesColors.textSecondary} />
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.toolbarButton}
-          onPress={handleDelete}
-          disabled={isDeleting}
-        >
-          {isDeleting ? (
-            <ActivityIndicator size="small" color={NotesColors.textSecondary} />
-          ) : (
-            <Ionicons name="trash-outline" size={24} color={NotesColors.textSecondary} />
-          )}
-        </TouchableOpacity>
-      </View>
+          <View style={styles.optionsMenu}>
+            {inputHistory.length > 0 && (
+              <TouchableOpacity
+                style={styles.optionsMenuItem}
+                onPress={() => {
+                  setShowOptionsMenu(false);
+                  handleResynthesize();
+                }}
+              >
+                <Ionicons name="sparkles-outline" size={20} color={NotesColors.primary} />
+                <Text style={styles.optionsMenuText}>Re-synthesize with AI</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              style={[styles.optionsMenuItem, styles.optionsMenuItemDestructive]}
+              onPress={() => {
+                setShowOptionsMenu(false);
+                handleDelete();
+              }}
+            >
+              <Ionicons name="trash-outline" size={20} color="#FF3B30" />
+              <Text style={[styles.optionsMenuText, styles.optionsMenuTextDestructive]}>Delete Note</Text>
+            </TouchableOpacity>
+          </View>
+        </Pressable>
+      </Modal>
 
       {/* Add Content Modal */}
       <AddContentModal
@@ -926,6 +990,19 @@ const styles = StyleSheet.create({
   },
   headerButton: {
     padding: 8,
+  },
+  headerBackButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: -8,
+  },
+  headerBackText: {
+    fontSize: 17,
+    color: NotesColors.primary,
+  },
+  headerRightContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   doneButtonText: {
     fontSize: 17,
@@ -1095,18 +1172,60 @@ const styles = StyleSheet.create({
     padding: 8,
     marginLeft: 8,
   },
-  toolbar: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
+  // Floating Add Button
+  floatingAddButton: {
+    position: 'absolute',
+    bottom: 24,
+    right: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: NotesColors.primary,
+    justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    backgroundColor: NotesColors.card,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(255,255,255,0.1)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
   },
-  toolbarButton: {
-    padding: 12,
+  // Options Menu styles
+  optionsOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-start',
+    alignItems: 'flex-end',
+    paddingTop: 100,
+    paddingRight: 16,
+  },
+  optionsMenu: {
+    backgroundColor: NotesColors.card,
+    borderRadius: 12,
+    paddingVertical: 8,
+    minWidth: 200,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  optionsMenuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    gap: 12,
+  },
+  optionsMenuItemDestructive: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  optionsMenuText: {
+    fontSize: 16,
+    color: NotesColors.textPrimary,
+  },
+  optionsMenuTextDestructive: {
+    color: '#FF3B30',
   },
   // Recording Modal styles
   modalOverlay: {
