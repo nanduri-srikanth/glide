@@ -40,12 +40,19 @@ class LLMService:
         if not self.client:
             return self._mock_extraction(transcript)
 
+        # Get user's folders or use defaults
+        folders_list = ['Work', 'Personal', 'Ideas', 'Meetings', 'Projects']
+        if user_context and user_context.get('folders'):
+            folders_list = user_context.get('folders')
+        folders_str = '|'.join(folders_list)
+
         context_str = ""
         if user_context:
             context_str = f"""
 User context:
 - Timezone: {user_context.get('timezone', 'America/Chicago')}
 - Current date: {user_context.get('current_date', 'today')}
+- Your folders: {', '.join(folders_list)}
 """
 
         prompt = f"""Analyze this voice memo transcript and extract actionable items.
@@ -105,7 +112,7 @@ REMINDERS - Create when you detect:
 Extract and return ONLY valid JSON (no markdown, no explanation) with this exact structure:
 {{
   "title": "Brief descriptive title for this note (5-10 words max)",
-  "folder": "Work|Personal|Ideas|Meetings|Projects",
+  "folder": "{folders_str}",
   "tags": ["relevant", "tags", "max5"],
   "summary": "Summary following the instructions above - match user's tone and style",
   "calendar": [
@@ -456,12 +463,19 @@ Return ONLY valid JSON."""
         if not self.client:
             return self._mock_synthesis(combined_content, text_input, audio_transcript)
 
+        # Get user's folders or use defaults
+        folders_list = ['Work', 'Personal', 'Ideas', 'Meetings', 'Projects']
+        if user_context and user_context.get('folders'):
+            folders_list = user_context.get('folders')
+        folders_str = '|'.join(folders_list)
+
         context_str = ""
         if user_context:
             context_str = f"""
 User context:
 - Timezone: {user_context.get('timezone', 'America/Chicago')}
 - Current date: {user_context.get('current_date', 'today')}
+- Your folders: {', '.join(folders_list)}
 """
 
         prompt = f"""You are helping synthesize a user's thoughts into a cohesive note.
@@ -534,7 +548,7 @@ Return ONLY valid JSON (no markdown, no explanation) with this exact structure:
 {{
   "narrative": "The synthesized, cohesive narrative combining all inputs - preserve user's voice",
   "title": "Brief descriptive title for this note (5-10 words max)",
-  "folder": "Work|Personal|Ideas|Meetings|Projects",
+  "folder": "{folders_str}",
   "tags": ["relevant", "tags", "max5"],
   "summary": "Summary following instructions above - match user's tone and length to content",
   "calendar": [

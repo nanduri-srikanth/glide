@@ -69,11 +69,23 @@ async def process_voice_memo(
             filename=audio_file.filename or "recording.mp3",
         )
 
-        # 3. Extract actions using LLM
+        # 3. Fetch user's folders for smart categorization
+        folders_result = await db.execute(
+            select(Folder.name)
+            .where(Folder.user_id == current_user.id)
+            .where(Folder.is_system == False)
+            .order_by(Folder.sort_order)
+        )
+        user_folders = [row[0] for row in folders_result.fetchall()]
+        if not user_folders:
+            user_folders = ['Work', 'Personal', 'Ideas']
+
+        # 4. Extract actions using LLM with user's folders
         llm_service = LLMService()
         user_context = {
             "timezone": current_user.timezone,
             "current_date": datetime.utcnow().strftime("%Y-%m-%d"),
+            "folders": user_folders,
         }
         extraction = await llm_service.extract_actions(
             transcript=transcription.text,
@@ -301,11 +313,23 @@ async def synthesize_note(
                 "audio_key": None,
             })
 
+        # Fetch user's folders for smart categorization
+        folders_result = await db.execute(
+            select(Folder.name)
+            .where(Folder.user_id == current_user.id)
+            .where(Folder.is_system == False)
+            .order_by(Folder.sort_order)
+        )
+        user_folders = [row[0] for row in folders_result.fetchall()]
+        if not user_folders:
+            user_folders = ['Work', 'Personal', 'Ideas']
+
         # Synthesize content using LLM
         llm_service = LLMService()
         user_context = {
             "timezone": current_user.timezone,
             "current_date": now.strftime("%Y-%m-%d"),
+            "folders": user_folders,
         }
         synthesis = await llm_service.synthesize_content(
             text_input=text_input or "",
