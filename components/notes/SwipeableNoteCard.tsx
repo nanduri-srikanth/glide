@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import {
   StyleSheet,
   View,
@@ -8,6 +8,7 @@ import {
   Alert,
   Modal,
   Pressable,
+  Dimensions,
 } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
 import { Ionicons } from '@expo/vector-icons';
@@ -26,6 +27,10 @@ interface SwipeableNoteCardProps {
   onSelect: (noteId: string) => void;
 }
 
+const SCREEN_WIDTH = Dimensions.get('window').width;
+const ACTION_WIDTH = 80;
+const FULL_SWIPE_THRESHOLD = SCREEN_WIDTH * 0.6; // 60% of screen = full swipe delete
+
 export function SwipeableNoteCard({
   note,
   onPress,
@@ -42,7 +47,6 @@ export function SwipeableNoteCard({
 
   useEffect(() => {
     if (isEditMode) {
-      // Animate minus button in
       Animated.spring(minusScaleAnim, {
         toValue: 1,
         useNativeDriver: true,
@@ -50,7 +54,6 @@ export function SwipeableNoteCard({
         friction: 7,
       }).start();
     } else {
-      // Reset animation
       Animated.timing(minusScaleAnim, {
         toValue: 0,
         duration: 150,
@@ -59,10 +62,10 @@ export function SwipeableNoteCard({
     }
   }, [isEditMode]);
 
-  const handleDelete = () => {
+  const handleDelete = useCallback(() => {
     Alert.alert(
       'Delete Note',
-      `Are you sure you want to delete "${note.title}"? This action cannot be undone.`,
+      `Are you sure you want to delete "${note.title}"?`,
       [
         {
           text: 'Cancel',
@@ -79,18 +82,18 @@ export function SwipeableNoteCard({
         },
       ]
     );
-  };
+  }, [note.id, note.title, onDelete]);
 
-  const handleMove = () => {
+  const handleMove = useCallback(() => {
     swipeableRef.current?.close();
     onMove(note.id);
-  };
+  }, [note.id, onMove]);
 
-  const handleLongPress = () => {
+  const handleLongPress = useCallback(() => {
     setShowMenu(true);
-  };
+  }, []);
 
-  const handleMenuOption = (action: string) => {
+  const handleMenuOption = useCallback((action: string) => {
     setShowMenu(false);
     switch (action) {
       case 'delete':
@@ -103,26 +106,28 @@ export function SwipeableNoteCard({
         onPin?.(note.id);
         break;
     }
-  };
+  }, [handleDelete, note.id, onMove, onPin]);
 
-  const renderRightActions = (
+  const renderRightActions = useCallback((
     progress: Animated.AnimatedInterpolation<number>,
     dragX: Animated.AnimatedInterpolation<number>
   ) => {
-    const translateX = dragX.interpolate({
-      inputRange: [-160, 0],
-      outputRange: [0, 160],
+    // Scale animation for delete button when swiping far
+    const scale = dragX.interpolate({
+      inputRange: [-FULL_SWIPE_THRESHOLD, -ACTION_WIDTH * 2, 0],
+      outputRange: [1.2, 1, 0.8],
       extrapolate: 'clamp',
     });
 
-    const opacity = dragX.interpolate({
-      inputRange: [-160, -80, 0],
-      outputRange: [1, 0.8, 0],
+    // Opacity for "swipe more" hint
+    const hintOpacity = dragX.interpolate({
+      inputRange: [-FULL_SWIPE_THRESHOLD, -ACTION_WIDTH * 2.5, -ACTION_WIDTH * 2],
+      outputRange: [1, 0.5, 0],
       extrapolate: 'clamp',
     });
 
     return (
-      <Animated.View style={[styles.actionsContainer, { opacity, transform: [{ translateX }] }]}>
+      <View style={styles.actionsContainer}>
         {/* Move button */}
         <TouchableOpacity
           style={styles.moveButton}
@@ -133,24 +138,35 @@ export function SwipeableNoteCard({
         </TouchableOpacity>
 
         {/* Delete button */}
-        <TouchableOpacity
-          style={styles.deleteButton}
-          onPress={handleDelete}
-        >
-          <Ionicons name="trash-outline" size={22} color="#fff" />
-          <Text style={styles.actionText}>Delete</Text>
-        </TouchableOpacity>
-      </Animated.View>
-    );
-  };
+        <Animated.View style={[styles.deleteButton, { transform: [{ scale }] }]}>
+          <TouchableOpacity
+            style={styles.deleteButtonInner}
+            onPress={handleDelete}
+          >
+            <Ionicons name="trash-outline" size={22} color="#fff" />
+            <Text style={styles.actionText}>Delete</Text>
+          </TouchableOpacity>
+        </Animated.View>
 
-  const handlePress = () => {
-    if (isEditMode) {
-      onSelect(note.id);
-    } else {
-      onPress();
-    }
-  };
+        {/* Full swipe hint */}
+        <Animated.View style={[styles.fullSwipeHint, { opacity: hintOpacity }]}>
+          <Ionicons name="arrow-back" size={16} color="#fff" />
+          <Text style={styles.fullSwipeText}>Swipe to delete</Text>
+        </Animated.View>
+      </View>
+    );
+  }, [handleDelete, handleMove]);
+
+  // Handle when swipe completes fully
+  const handleSwipeableOpen = useCallback((direction: 'left' | 'right') => {
+    // If opened from right swipe, check if it was a full swipe
+    // The Swipeable considers it "open" when past the threshold
+  }, []);
+
+  // Detect full swipe using onSwipeableWillOpen with custom logic
+  const handleSwipeableWillOpen = useCallback((direction: 'left' | 'right') => {
+    // This fires when swipe will open
+  }, []);
 
   if (isEditMode) {
     return (
@@ -178,8 +194,11 @@ export function SwipeableNoteCard({
       <Swipeable
         ref={swipeableRef}
         renderRightActions={renderRightActions}
-        rightThreshold={40}
+        rightThreshold={ACTION_WIDTH}
         overshootRight={false}
+        friction={2}
+        enableTrackpadTwoFingerGesture
+        onSwipeableOpen={handleSwipeableOpen}
       >
         <Pressable onPress={onPress} onLongPress={handleLongPress} delayLongPress={500}>
           <NoteCard note={note} onPress={onPress} />
@@ -241,21 +260,25 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 10,
+    paddingLeft: 8,
   },
   moveButton: {
     backgroundColor: NotesColors.primary,
     justifyContent: 'center',
     alignItems: 'center',
-    width: 75,
+    width: ACTION_WIDTH,
     height: '100%',
     borderTopLeftRadius: 12,
     borderBottomLeftRadius: 12,
   },
   deleteButton: {
+    height: '100%',
+  },
+  deleteButtonInner: {
     backgroundColor: '#FF3B30',
     justifyContent: 'center',
     alignItems: 'center',
-    width: 75,
+    width: ACTION_WIDTH,
     height: '100%',
     borderTopRightRadius: 12,
     borderBottomRightRadius: 12,
@@ -265,6 +288,18 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     marginTop: 4,
+  },
+  fullSwipeHint: {
+    position: 'absolute',
+    right: ACTION_WIDTH * 2 + 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  fullSwipeText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '500',
   },
   editModeContainer: {
     flexDirection: 'row',

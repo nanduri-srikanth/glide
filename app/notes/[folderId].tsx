@@ -7,12 +7,10 @@ import {
   SafeAreaView,
   RefreshControl,
   ActivityIndicator,
-  TouchableOpacity,
   Alert,
 } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useLocalSearchParams, useRouter, Stack, useFocusEffect } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
 import { NotesColors } from '@/constants/theme';
 import { mockFolders } from '@/data/mockFolders';
 import { getNotesByFolder } from '@/data/mockNotes';
@@ -36,8 +34,6 @@ export default function NoteListScreen() {
   const { notes: apiNotes, folders, isLoading, error, fetchNotes, searchNotes, deleteNote, moveNote } = useNotes();
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [isEditMode, setIsEditMode] = useState(false);
-  const [selectedNotes, setSelectedNotes] = useState<Set<string>>(new Set());
   const [showMoveSheet, setShowMoveSheet] = useState(false);
   const [noteToMove, setNoteToMove] = useState<string | null>(null);
   const [isMoving, setIsMoving] = useState(false);
@@ -141,10 +137,6 @@ export default function NoteListScreen() {
     router.push({ pathname: '/recording', params: { folderId } });
   };
 
-  const handleMicPress = () => {
-    router.push({ pathname: '/recording', params: { folderId } });
-  };
-
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     if (isAuthenticated && folderId) {
@@ -200,49 +192,6 @@ export default function NoteListScreen() {
     }
   }, [noteToMove, moveNote, isAuthenticated, folderId, isAllNotesFolder, fetchNotes]);
 
-  const handleSelectNote = useCallback((noteId: string) => {
-    setSelectedNotes(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(noteId)) {
-        newSet.delete(noteId);
-      } else {
-        newSet.add(noteId);
-      }
-      return newSet;
-    });
-  }, []);
-
-  const handleDeleteSelected = useCallback(() => {
-    if (selectedNotes.size === 0) return;
-
-    Alert.alert(
-      'Delete Notes',
-      `Are you sure you want to delete ${selectedNotes.size} note${selectedNotes.size > 1 ? 's' : ''}? This action cannot be undone.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            for (const noteId of selectedNotes) {
-              await deleteNote(noteId);
-            }
-            setSelectedNotes(new Set());
-            setIsEditMode(false);
-            if (isAuthenticated && folderId) {
-              await fetchNotes(isAllNotesFolder ? undefined : folderId);
-            }
-          },
-        },
-      ]
-    );
-  }, [selectedNotes, deleteNote, isAuthenticated, folderId, fetchNotes]);
-
-  const toggleEditMode = useCallback(() => {
-    setIsEditMode(prev => !prev);
-    setSelectedNotes(new Set());
-  }, []);
-
   const renderSectionHeader = ({ section }: { section: Section }) => (
     <View style={styles.sectionHeader}>
       <Text style={styles.sectionTitle}>{section.title}</Text>
@@ -255,34 +204,10 @@ export default function NoteListScreen() {
       onPress={() => handleNotePress(item)}
       onDelete={handleDeleteNote}
       onMove={handleMoveNote}
-      isEditMode={isEditMode}
-      isSelected={selectedNotes.has(item.id)}
-      onSelect={handleSelectNote}
+      isEditMode={false}
+      isSelected={false}
+      onSelect={() => {}}
     />
-  );
-
-  const headerRight = () => (
-    <View style={styles.headerButtons}>
-      {isEditMode ? (
-        <>
-          {selectedNotes.size > 0 && (
-            <TouchableOpacity
-              style={styles.headerButton}
-              onPress={handleDeleteSelected}
-            >
-              <Ionicons name="trash-outline" size={22} color="#FF3B30" />
-            </TouchableOpacity>
-          )}
-          <TouchableOpacity style={styles.headerButton} onPress={toggleEditMode}>
-            <Text style={styles.doneText}>Done</Text>
-          </TouchableOpacity>
-        </>
-      ) : (
-        <TouchableOpacity style={styles.headerButton} onPress={toggleEditMode}>
-          <Text style={styles.editText}>Edit</Text>
-        </TouchableOpacity>
-      )}
-    </View>
   );
 
   return (
@@ -291,7 +216,6 @@ export default function NoteListScreen() {
         <Stack.Screen
           options={{
             title: folder?.name || 'Notes',
-            headerRight,
           }}
         />
 
@@ -321,28 +245,12 @@ export default function NoteListScreen() {
           }
         />
 
-        {isEditMode && selectedNotes.size > 0 && (
-          <View style={styles.selectionBar}>
-            <Text style={styles.selectionText}>
-              {selectedNotes.size} selected
-            </Text>
-            <TouchableOpacity onPress={() => setSelectedNotes(new Set())}>
-              <Text style={styles.clearText}>Clear</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {!isEditMode && (
-          <>
-            <SearchBar
-              value={searchQuery}
-              onChangeText={handleSearch}
-              onMicPress={handleMicPress}
-              placeholder="Search notes"
-            />
-            <ComposeButton onPress={handleComposePress} />
-          </>
-        )}
+        <SearchBar
+          value={searchQuery}
+          onChangeText={handleSearch}
+          placeholder="Search notes"
+        />
+        <ComposeButton onPress={handleComposePress} />
 
         <MoveFolderSheet
           visible={showMoveSheet}
@@ -388,46 +296,5 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 17,
     color: NotesColors.textSecondary,
-  },
-  headerButtons: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-  },
-  headerButton: {
-    padding: 4,
-  },
-  editText: {
-    fontSize: 17,
-    color: NotesColors.primary,
-  },
-  doneText: {
-    fontSize: 17,
-    fontWeight: '600',
-    color: NotesColors.primary,
-  },
-  selectionBar: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: NotesColors.card,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    paddingBottom: 34,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: NotesColors.textSecondary,
-  },
-  selectionText: {
-    fontSize: 16,
-    color: NotesColors.textPrimary,
-    fontWeight: '500',
-  },
-  clearText: {
-    fontSize: 16,
-    color: NotesColors.primary,
   },
 });

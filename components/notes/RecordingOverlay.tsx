@@ -13,17 +13,27 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { NotesColors } from '@/constants/theme';
 
+// Destination type for context indicator
+export interface RecordingDestination {
+  type: 'note' | 'folder' | 'quick';
+  name: string;
+  id?: string;
+}
+
 interface RecordingOverlayProps {
   isRecording: boolean;
   isPaused: boolean;
   duration: number;
-  recordingUri?: string | null; // URI of saved recording (when stopped but not processed)
+  recordingUri?: string | null;
+  destination?: RecordingDestination | null;
   onStartRecording: () => void;
-  onStopRecording: () => Promise<string | null>; // Just stop, returns URI
+  onStopRecording: () => Promise<string | null>;
   onPauseRecording: () => void;
   onResumeRecording: () => void;
   onCancel: () => void;
-  onProcess: (notes: string, audioUri?: string | null) => void; // Process with AI
+  onProcess: (notes: string, audioUri?: string | null) => void;
+  onAddToNote?: () => void;
+  onIntoFolder?: () => void;
 }
 
 // Animated wave bar component
@@ -92,12 +102,15 @@ export function RecordingOverlay({
   isPaused,
   duration,
   recordingUri,
+  destination,
   onStartRecording,
   onStopRecording,
   onPauseRecording,
   onResumeRecording,
   onCancel,
   onProcess,
+  onAddToNote,
+  onIntoFolder,
 }: RecordingOverlayProps) {
   const [notes, setNotes] = useState('');
   const [savedAudioUri, setSavedAudioUri] = useState<string | null>(null);
@@ -211,6 +224,31 @@ export function RecordingOverlay({
   const hasRecording = duration > 0 || !!savedAudioUri || !!recordingUri;
   const hasStoppedRecording = !!savedAudioUri || !!recordingUri;
 
+  // Determine header title based on destination
+  const getHeaderTitle = () => {
+    if (!destination) return 'New Note';
+    if (destination.type === 'note') {
+      return (
+        <View style={styles.destinationHeader}>
+          <Text style={styles.destinationPrefix}>Recording</Text>
+          <Ionicons name="arrow-forward" size={14} color={NotesColors.textSecondary} />
+          <Text style={styles.destinationName} numberOfLines={1}>{destination.name}</Text>
+        </View>
+      );
+    }
+    if (destination.type === 'folder') {
+      return (
+        <View style={styles.destinationHeader}>
+          <Text style={styles.destinationPrefix}>Recording</Text>
+          <Ionicons name="arrow-forward" size={14} color={NotesColors.textSecondary} />
+          <Ionicons name="folder" size={14} color={NotesColors.primary} />
+          <Text style={styles.destinationName} numberOfLines={1}>{destination.name}</Text>
+        </View>
+      );
+    }
+    return 'New Note';
+  };
+
   return (
     <KeyboardAvoidingView
       style={styles.container}
@@ -222,7 +260,11 @@ export function RecordingOverlay({
         <TouchableOpacity style={styles.cancelButton} onPress={onCancel}>
           <Ionicons name="close" size={28} color={NotesColors.textSecondary} />
         </TouchableOpacity>
-        <Text style={styles.title}>New Note</Text>
+        {typeof getHeaderTitle() === 'string' ? (
+          <Text style={styles.title}>{getHeaderTitle()}</Text>
+        ) : (
+          getHeaderTitle()
+        )}
         <View style={styles.headerRight}>
           {hasRecording && !showMicInCorner && (
             <View style={styles.recordingBadge}>
@@ -328,6 +370,28 @@ export function RecordingOverlay({
           </View>
         ) : null}
 
+        {/* Secondary action buttons - only show when no destination set and not recording */}
+        {!destination && !isRecording && !hasStoppedRecording && !showMicInCorner && onAddToNote && onIntoFolder && (
+          <View style={styles.secondaryActions}>
+            <TouchableOpacity
+              style={styles.secondaryButton}
+              onPress={onAddToNote}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="attach" size={18} color={NotesColors.primary} />
+              <Text style={styles.secondaryButtonText}>Add to...</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.secondaryButton}
+              onPress={onIntoFolder}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="folder-outline" size={18} color={NotesColors.primary} />
+              <Text style={styles.secondaryButtonText}>Into...</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         {/* Process button - show when there's content */}
         {canProcess && (
           <TouchableOpacity
@@ -388,6 +452,24 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '600',
     color: NotesColors.textPrimary,
+  },
+  destinationHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flex: 1,
+    justifyContent: 'center',
+    maxWidth: 200,
+  },
+  destinationPrefix: {
+    fontSize: 15,
+    color: NotesColors.textSecondary,
+  },
+  destinationName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: NotesColors.textPrimary,
+    flexShrink: 1,
   },
   headerRight: {
     width: 80,
@@ -513,6 +595,25 @@ const styles = StyleSheet.create({
     height: 60,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  secondaryActions: {
+    flexDirection: 'row',
+    gap: 16,
+    marginTop: 8,
+  },
+  secondaryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: NotesColors.aiPanelBackground,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+  },
+  secondaryButtonText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: NotesColors.primary,
   },
   processButton: {
     flexDirection: 'row',

@@ -18,6 +18,7 @@ export interface NoteListItem {
   email_count: number;
   reminder_count: number;
   created_at: string;
+  updated_at?: string;
 }
 
 export interface NoteListResponse {

@@ -99,7 +99,6 @@ export default function FoldersScreen() {
   }, [router]);
 
   const handleComposePress = () => router.push('/recording');
-  const handleMicPress = () => router.push('/recording');
 
   const handleAddFolder = async () => {
     if (!isAuthenticated) {
@@ -279,7 +278,6 @@ export default function FoldersScreen() {
             <SearchBar
               value={searchQuery}
               onChangeText={setSearchQuery}
-              onMicPress={handleMicPress}
               placeholder="Search"
             />
             <ComposeButton onPress={handleComposePress} />

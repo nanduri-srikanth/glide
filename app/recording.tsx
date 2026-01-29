@@ -3,13 +3,16 @@ import { StyleSheet, SafeAreaView, Alert, View, Text, ActivityIndicator, Animate
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { NotesColors } from '@/constants/theme';
-import { RecordingOverlay } from '@/components/notes/RecordingOverlay';
+import { RecordingOverlay, RecordingDestination } from '@/components/notes/RecordingOverlay';
 import { FolderSelectionSheet } from '@/components/notes/FolderSelectionSheet';
+import { NoteSelectionSheet } from '@/components/notes/NoteSelectionSheet';
 import { useRecording } from '@/hooks/useRecording';
 import { useAuth } from '@/context/AuthContext';
 import { useNotes } from '@/context/NotesContext';
 import { notesService } from '@/services/notes';
 import { voiceService } from '@/services/voice';
+
+type FlowMode = 'idle' | 'quick' | 'add-to-note' | 'into-folder';
 
 export default function RecordingScreen() {
   const router = useRouter();
@@ -33,9 +36,20 @@ export default function RecordingScreen() {
     resetState,
   } = useRecording();
 
+  // Flow state
+  const [flowMode, setFlowMode] = useState<FlowMode>('idle');
+  const [destination, setDestination] = useState<RecordingDestination | null>(null);
+  const [targetNote, setTargetNote] = useState<{ id: string; title: string } | null>(null);
+  const [targetFolder, setTargetFolder] = useState<{ id: string; name: string } | null>(null);
+
+  // Sheet visibility
+  const [showNoteSheet, setShowNoteSheet] = useState(false);
+  const [showFolderSheet, setShowFolderSheet] = useState(false);
+  const [showFolderSheetDirect, setShowFolderSheetDirect] = useState(false); // For "Into..." flow
+
+  // Processing state
   const [showProcessing, setShowProcessing] = useState(false);
   const [userNotes, setUserNotes] = useState('');
-  const [showFolderSheet, setShowFolderSheet] = useState(false);
   const [pendingAudioUri, setPendingAudioUri] = useState<string | null>(null);
   const [pendingNotes, setPendingNotes] = useState('');
   const [sheetProcessing, setSheetProcessing] = useState(false);
@@ -53,6 +67,8 @@ export default function RecordingScreen() {
     setShowProcessing(false);
     setSheetProcessing(false);
     setShowFolderSheet(false);
+    setShowFolderSheetDirect(false);
+    setShowNoteSheet(false);
 
     // Reset animation values
     successScale.setValue(0);
@@ -123,6 +139,42 @@ export default function RecordingScreen() {
     return uri;
   };
 
+  // Handle "Add to..." button - open note selection sheet
+  const handleAddToNote = () => {
+    if (!isAuthenticated) {
+      Alert.alert('Sign In Required', 'Please sign in to add content to notes.');
+      return;
+    }
+    setShowNoteSheet(true);
+  };
+
+  // Handle note selected from sheet
+  const handleNoteSelected = (noteId: string, noteTitle: string) => {
+    setTargetNote({ id: noteId, title: noteTitle });
+    setDestination({ type: 'note', name: noteTitle, id: noteId });
+    setFlowMode('add-to-note');
+    setShowNoteSheet(false);
+  };
+
+  // Handle "Into..." button - open folder selection sheet directly
+  const handleIntoFolder = () => {
+    if (!isAuthenticated) {
+      Alert.alert('Sign In Required', 'Please sign in to save notes.');
+      return;
+    }
+    setShowFolderSheetDirect(true);
+  };
+
+  // Handle folder selected from "Into..." flow
+  const handleFolderSelectedDirect = async (selectedFolderId: string, folderName?: string) => {
+    // Get folder name from context if not provided
+    const name = folderName || 'Folder';
+    setTargetFolder({ id: selectedFolderId, name });
+    setDestination({ type: 'folder', name, id: selectedFolderId });
+    setFlowMode('into-folder');
+    setShowFolderSheetDirect(false);
+  };
+
   // Process with AI - called when user taps Process button
   const handleProcess = async (notes: string, audioUri?: string | null) => {
     setUserNotes(notes);
@@ -137,8 +189,19 @@ export default function RecordingScreen() {
       return;
     }
 
-    // If coming from a specific folder, process directly with synthesis
-    if (folderId) {
+    // Route based on flow mode
+    if (flowMode === 'add-to-note' && targetNote) {
+      // Process to existing note
+      await processToExistingNote(notes, finalAudioUri);
+    } else if (flowMode === 'into-folder' && targetFolder) {
+      // Process directly to target folder
+      setPendingNotes(notes || '');
+      if (finalAudioUri) {
+        setPendingAudioUri(finalAudioUri);
+      }
+      await processNoteWithFolder(targetFolder.id);
+    } else if (folderId) {
+      // Coming from a specific folder context
       setShowProcessing(true);
 
       const { data, error: apiError } = await voiceService.synthesizeNote(
@@ -165,12 +228,47 @@ export default function RecordingScreen() {
         ]);
       }
     } else {
-      // Show folder selection sheet
+      // Quick capture flow - show folder selection sheet
       setPendingNotes(notes || '');
       if (finalAudioUri) {
         setPendingAudioUri(finalAudioUri);
       }
       setShowFolderSheet(true);
+    }
+  };
+
+  // Process to an existing note (add content)
+  const processToExistingNote = async (notes: string, audioUri?: string | null) => {
+    if (!targetNote) return;
+
+    setShowProcessing(true);
+
+    try {
+      const { data, error: apiError } = await voiceService.addToNote(
+        targetNote.id,
+        {
+          textInput: notes || undefined,
+          audioUri: audioUri || undefined,
+          autoDecide: true,
+        },
+        (progress, status) => {
+          // Could update status here
+        }
+      );
+
+      if (data) {
+        fetchFolders();
+        showSuccessAndNavigateBack(`Added to "${targetNote.title}"`);
+      } else {
+        setShowProcessing(false);
+        Alert.alert('Error', apiError || 'Failed to add content to note', [
+          { text: 'Try Again' },
+          { text: 'Cancel', style: 'cancel' },
+        ]);
+      }
+    } catch (err) {
+      setShowProcessing(false);
+      Alert.alert('Error', 'Failed to add content to note');
     }
   };
 
@@ -256,8 +354,6 @@ export default function RecordingScreen() {
     }
   };
 
-  // Note: handleSubmitTextOnly is no longer needed - handleProcess handles both text-only and audio+text
-
   const handleCancel = () => {
     if (isRecording) {
       Alert.alert(
@@ -341,7 +437,7 @@ export default function RecordingScreen() {
         <View style={styles.processingContainer}>
           <ActivityIndicator size="large" color={NotesColors.primary} />
           <Text style={styles.processingTitle}>
-            {hasAudio ? 'Processing Recording' : 'Saving Note'}
+            {flowMode === 'add-to-note' ? 'Adding to Note' : hasAudio ? 'Processing Recording' : 'Saving Note'}
           </Text>
           <Text style={styles.processingStatus}>
             {processingStatus || (hasAudio ? 'Uploading audio...' : 'Creating note...')}
@@ -352,7 +448,9 @@ export default function RecordingScreen() {
             </View>
           )}
           <Text style={styles.processingHint}>
-            {hasAudio
+            {flowMode === 'add-to-note'
+              ? 'Adding your content to the existing note...'
+              : hasAudio
               ? 'This may take a moment while we transcribe and analyze your voice memo.'
               : 'Saving your note...'}
           </Text>
@@ -368,19 +466,46 @@ export default function RecordingScreen() {
         isPaused={isPaused}
         duration={duration}
         recordingUri={pendingAudioUri}
+        destination={destination}
         onStartRecording={handleStartRecording}
         onStopRecording={handleStopRecording}
         onPauseRecording={handlePauseRecording}
         onResumeRecording={handleResumeRecording}
         onCancel={handleCancel}
         onProcess={handleProcess}
+        onAddToNote={handleAddToNote}
+        onIntoFolder={handleIntoFolder}
       />
+
+      {/* Note Selection Sheet (for "Add to..." flow) */}
+      <NoteSelectionSheet
+        visible={showNoteSheet}
+        onSelectNote={handleNoteSelected}
+        onClose={() => setShowNoteSheet(false)}
+      />
+
+      {/* Folder Selection Sheet (for quick capture flow) */}
       <FolderSelectionSheet
         visible={showFolderSheet}
         onSelectFolder={handleFolderSelected}
         onAutoSort={handleAutoSort}
         onCreateFolder={handleCreateFolder}
         onClose={() => setShowFolderSheet(false)}
+        isProcessing={sheetProcessing}
+        processingStatus={sheetProcessingStatus}
+      />
+
+      {/* Folder Selection Sheet (for "Into..." flow - direct folder selection) */}
+      <FolderSelectionSheet
+        visible={showFolderSheetDirect}
+        onSelectFolder={(folderId) => handleFolderSelectedDirect(folderId)}
+        onAutoSort={() => {
+          // For "Into..." flow, auto-sort just closes and uses auto-sort
+          setShowFolderSheetDirect(false);
+          // Don't set destination, let it go through normal flow
+        }}
+        onCreateFolder={handleCreateFolder}
+        onClose={() => setShowFolderSheetDirect(false)}
         isProcessing={sheetProcessing}
         processingStatus={sheetProcessingStatus}
       />

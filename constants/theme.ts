@@ -14,8 +14,8 @@ export const NotesColors = {
   primary: '#8B85D0',      // Deeper lavender - Folder icons, buttons (darkened for contrast)
   secondary: '#B9B7EB',    // Lavender - Action badges, highlights
   accent: '#A78BDB',       // Purple blend - Links, CTAs
-  background: '#FAFAFF',   // Soft lavender white background
-  card: '#F0EFFE',         // Very light lavender card backgrounds
+  background: '#F0EFFE',   // Light lavender background
+  card: '#FAFAFF',         // Soft white card backgrounds
   textPrimary: '#2D2A4A',  // Deep purple-navy text
   textSecondary: '#6B6899', // Muted purple-gray text
   // Derived colors for AI Summary Panel
@@ -30,7 +30,7 @@ export const NotesColors = {
 export const Colors = {
   light: {
     text: '#2D2A4A',
-    background: '#FAFAFF',
+    background: '#F0EFFE',
     tint: '#8B85D0',
     icon: '#6B6899',
     tabIconDefault: '#6B6899',
