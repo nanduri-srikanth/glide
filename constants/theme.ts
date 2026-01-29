@@ -5,35 +5,36 @@
 
 import { Platform } from 'react-native';
 
-const tintColorLight = '#0a7ea4';
+const tintColorLight = '#636B2F';  // Dark Olive (Mossy Hollow)
 const tintColorDark = '#fff';
 
-// Notes App Purple Color Scheme - Light Mode
+// Notes App Mossy Hollow Color Scheme - Light Mode
+// Inspired by Figma's Mossy Hollow palette
 export const NotesColors = {
-  primary: '#624587',      // Folder icons, selected states, primary buttons
-  secondary: '#834587',    // Action badges, highlights, active elements
-  accent: '#87456A',       // Links, CTAs, "View Draft →"
-  background: '#FAF6F1',   // Sandy ivory background
-  card: '#F0EBE3',         // Card backgrounds (warm ivory)
-  textPrimary: '#1A1A1A',  // Dark text
-  textSecondary: '#666666', // Gray text
+  primary: '#636B2F',      // Dark Olive - Folder icons, selected states, primary buttons
+  secondary: '#34542C',    // Forest Green - Action badges, highlights, active elements
+  accent: '#AE5264',       // Mauve - Links, CTAs, contrast accents
+  background: '#F7F8F2',   // Soft sage white background
+  card: '#E8EBD9',         // Light sage card backgrounds
+  textPrimary: '#3D4127',  // Deep Forest - Dark text
+  textSecondary: '#6B7255', // Muted olive - Gray text
   // Derived colors for AI Summary Panel
-  aiPanelBackground: 'rgba(98, 69, 135, 0.08)',
-  aiPanelBorder: 'rgba(98, 69, 135, 0.3)',
+  aiPanelBackground: 'rgba(99, 107, 47, 0.08)',
+  aiPanelBorder: 'rgba(99, 107, 47, 0.3)',
   // Action badge colors
-  calendarBadge: '#624587',
-  emailBadge: '#834587',
-  reminderBadge: '#87456A',
+  calendarBadge: '#636B2F',  // Dark Olive
+  emailBadge: '#34542C',     // Forest Green
+  reminderBadge: '#AE5264',  // Mauve
 };
 
 export const Colors = {
   light: {
-    text: '#11181C',
-    background: '#FAF6F1',
-    tint: tintColorLight,
-    icon: '#687076',
-    tabIconDefault: '#687076',
-    tabIconSelected: tintColorLight,
+    text: '#3D4127',
+    background: '#F7F8F2',
+    tint: '#636B2F',
+    icon: '#6B7255',
+    tabIconDefault: '#6B7255',
+    tabIconSelected: '#636B2F',
   },
   dark: {
     text: '#ECEDEE',
