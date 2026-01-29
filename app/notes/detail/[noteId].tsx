@@ -211,6 +211,12 @@ export default function NoteDetailScreen() {
     outputRange: [0, -20],
     extrapolate: 'clamp',
   });
+  // Nav bar title fades IN as main title fades out
+  const navTitleOpacity = scrollY.interpolate({
+    inputRange: [60, 120],
+    outputRange: [0, 1],
+    extrapolate: 'clamp',
+  });
 
   // Initialize edit fields when note loads or changes
   useEffect(() => {
@@ -616,6 +622,15 @@ export default function NoteDetailScreen() {
           title: '',
           headerTransparent: false,
           headerStyle: { backgroundColor: NotesColors.background },
+          headerTitle: () => (
+            <Animated.Text
+              style={[styles.navBarTitle, { opacity: navTitleOpacity }]}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+            >
+              {note.title.length > 25 ? note.title.substring(0, 25) + '...' : note.title}
+            </Animated.Text>
+          ),
           headerLeft: () => (
             <TouchableOpacity
               onPress={() => {
@@ -999,6 +1014,13 @@ const styles = StyleSheet.create({
   headerBackText: {
     fontSize: 17,
     color: NotesColors.primary,
+  },
+  navBarTitle: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: NotesColors.textPrimary,
+    maxWidth: 180,
+    textAlign: 'center',
   },
   headerRightContainer: {
     flexDirection: 'row',
