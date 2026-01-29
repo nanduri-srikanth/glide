@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     # API Keys (optional - mock responses used when not configured)
     openai_api_key: str = ""
     anthropic_api_key: str = ""
+    groq_api_key: str = ""  # Groq for fast Whisper transcription and LLM inference
 
     # Supabase (optional for local dev)
     supabase_url: str = ""

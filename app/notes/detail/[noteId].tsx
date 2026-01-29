@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   StyleSheet,
   View,
@@ -17,11 +17,92 @@ import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { NotesColors } from '@/constants/theme';
 import { getNoteById, formatDuration } from '@/data/mockNotes';
-import { AISummaryPanel } from '@/components/notes/AISummaryPanel';
+import { FloatingActionBar, ActionCounts } from '@/components/notes/FloatingActionBar';
+import { EditableActionsPanel } from '@/components/notes/EditableActionsPanel';
+import {
+  CalendarAction,
+  EmailAction,
+  ReminderAction,
+  NextStepAction,
+  EditableAction,
+  NoteActions,
+} from '@/data/types';
 import { useNoteDetail } from '@/hooks/useNoteDetail';
 import { useRecording } from '@/hooks/useRecording';
+import { useActionDrafts } from '@/hooks/useActionDrafts';
 import { useAuth } from '@/context/AuthContext';
 import { Note } from '@/data/types';
+import { useNavigation } from '@react-navigation/native';
+import { generateTitleFromContent, isUserSetTitle } from '@/utils/textUtils';
+
+// Convert mock note actions to server action format for the useActionDrafts hook
+function convertMockActionsToServerFormat(actions: NoteActions | undefined) {
+  if (!actions) return undefined;
+
+  const serverActions: Array<{
+    id: string;
+    action_type: string;
+    title: string;
+    status: string;
+    scheduled_date?: string | null;
+    location?: string | null;
+    attendees?: string[] | null;
+    email_to?: string | null;
+    email_subject?: string | null;
+    email_body?: string | null;
+    priority?: string | null;
+  }> = [];
+
+  // Convert calendar actions
+  actions.calendar.forEach(cal => {
+    serverActions.push({
+      id: cal.id,
+      action_type: 'calendar',
+      title: cal.title,
+      status: cal.status === 'confirmed' ? 'executed' : 'pending',
+      scheduled_date: cal.date && cal.time ? `${cal.date}T${cal.time}:00` : cal.date || null,
+      location: cal.location || null,
+      attendees: cal.attendees || null,
+    });
+  });
+
+  // Convert email actions
+  actions.email.forEach(email => {
+    serverActions.push({
+      id: email.id,
+      action_type: 'email',
+      title: email.subject,
+      status: email.status === 'sent' ? 'executed' : 'pending',
+      email_to: email.to || null,
+      email_subject: email.subject || null,
+      email_body: email.body || email.preview || null,
+    });
+  });
+
+  // Convert reminder actions
+  actions.reminders.forEach(rem => {
+    serverActions.push({
+      id: rem.id,
+      action_type: 'reminder',
+      title: rem.title,
+      status: rem.status === 'completed' ? 'executed' : 'pending',
+      scheduled_date: rem.dueDate && rem.dueTime ? `${rem.dueDate}T${rem.dueTime}:00` : rem.dueDate || null,
+      priority: rem.priority || null,
+    });
+  });
+
+  // Convert next steps (strings to objects)
+  actions.nextSteps.forEach((step, index) => {
+    serverActions.push({
+      id: `nextstep-${index}`,
+      action_type: 'next_step',
+      title: typeof step === 'string' ? step : (step as any).title,
+      status: 'pending',
+    });
+  });
+
+  return serverActions;
+}
 
 export default function NoteDetailScreen() {
   const { noteId } = useLocalSearchParams<{ noteId: string }>();
@@ -35,7 +116,6 @@ export default function NoteDetailScreen() {
     deleteNote,
     updateNote,
     executeAction,
-    completeAction,
     appendAudio,
     isAppending,
     appendProgress,
@@ -49,8 +129,52 @@ export default function NoteDetailScreen() {
     cancelRecording,
     error: recordingError,
   } = useRecording();
+
+  const navigation = useNavigation();
+
+  // Get mock note for fallback
+  const mockNote = getNoteById(noteId || '');
+
+  // Use API note if available, otherwise fall back to mock data
+  const note: Note | null = apiNote || mockNote || null;
+
+  // Convert mock actions to server format for the hook when API isn't available
+  const serverActionsForHook = useMemo(() => {
+    if (rawNote?.actions) {
+      return rawNote.actions;
+    }
+    // Fall back to mock note actions converted to server format
+    return convertMockActionsToServerFormat(mockNote?.actions);
+  }, [rawNote?.actions, mockNote?.actions]);
+
+  // Use the action drafts hook for dirty tracking and persistence
+  const {
+    calendarActions: editableCalendarActions,
+    emailActions: editableEmailActions,
+    reminderActions: editableReminderActions,
+    nextStepActions: editableNextStepActions,
+    hasUnsavedChanges: hasUnsavedActionChanges,
+    hasDraftToRecover,
+    draftTimestamp,
+    isInitialized: actionsInitialized,
+    updateAction: handleUpdateAction,
+    deleteAction: handleDeleteAction,
+    addAction: handleAddAction,
+    recoverDraft,
+    discardDraft,
+    saveToServer: saveActionsToServer,
+    discardChanges: discardActionChanges,
+  } = useActionDrafts({
+    noteId,
+    serverActions: serverActionsForHook,
+  });
+
   const [isDeleting, setIsDeleting] = useState(false);
   const [showRecordingModal, setShowRecordingModal] = useState(false);
+  const [isActionsExpanded, setIsActionsExpanded] = useState(true); // Start expanded on first view
+  const [showExitConfirmModal, setShowExitConfirmModal] = useState(false);
+  const [showDraftRecoveryModal, setShowDraftRecoveryModal] = useState(false);
+  const [pendingNavigationAction, setPendingNavigationAction] = useState<(() => void) | null>(null);
 
   // Edit mode state
   const [isEditing, setIsEditing] = useState(false);
@@ -62,14 +186,18 @@ export default function NoteDetailScreen() {
   const titleInputRef = useRef<TextInput>(null);
   const transcriptInputRef = useRef<TextInput>(null);
 
-  // Use API note if available, otherwise fall back to mock data
-  const note: Note | null = apiNote || getNoteById(noteId || '') || null;
+  // Title auto-generation tracking
+  const [userEditedTitle, setUserEditedTitle] = useState(false);
+  const originalTitleRef = useRef<string>(''); // For reverting if user clears title
 
   // Initialize edit fields when note loads or changes
   useEffect(() => {
     if (note && !isEditing) {
       setEditedTitle(note.title);
       setEditedTranscript(note.transcript);
+      originalTitleRef.current = note.title;
+      // Check if the existing title appears to be user-set
+      setUserEditedTitle(isUserSetTitle(note.title));
     }
   }, [note?.title, note?.transcript, isEditing]);
 
@@ -93,14 +221,32 @@ export default function NoteDetailScreen() {
     setEditedTitle(text);
     setHasUnsavedChanges(true);
 
+    // Mark as user-edited if they typed something meaningful
+    if (text.trim().length > 0) {
+      setUserEditedTitle(true);
+      originalTitleRef.current = text; // Update the "original" to the new user-set title
+    }
+
     // Clear existing timeout
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
     }
 
+    // If user cleared the title, revert to original or auto-generate
+    let titleToSave = text;
+    if (text.trim().length === 0 && editedTranscript.trim().length > 0) {
+      // Auto-generate from transcript
+      const generatedTitle = generateTitleFromContent(editedTranscript);
+      if (generatedTitle) {
+        setEditedTitle(generatedTitle);
+        titleToSave = generatedTitle;
+        setUserEditedTitle(false); // Reset since it's now auto-generated
+      }
+    }
+
     // Set new timeout for auto-save (1.5 seconds)
     saveTimeoutRef.current = setTimeout(() => {
-      debouncedSave(text, editedTranscript);
+      debouncedSave(titleToSave, editedTranscript);
     }, 1500);
   }, [editedTranscript, debouncedSave]);
 
@@ -113,11 +259,21 @@ export default function NoteDetailScreen() {
       clearTimeout(saveTimeoutRef.current);
     }
 
+    // Auto-generate title if user hasn't manually set one
+    let titleToSave = editedTitle;
+    if (!userEditedTitle && text.trim().length > 0) {
+      const generatedTitle = generateTitleFromContent(text);
+      if (generatedTitle && generatedTitle !== editedTitle) {
+        setEditedTitle(generatedTitle);
+        titleToSave = generatedTitle;
+      }
+    }
+
     // Set new timeout for auto-save (1.5 seconds)
     saveTimeoutRef.current = setTimeout(() => {
-      debouncedSave(editedTitle, text);
+      debouncedSave(titleToSave, text);
     }, 1500);
-  }, [editedTitle, debouncedSave]);
+  }, [editedTitle, userEditedTitle, debouncedSave]);
 
   // Enter edit mode
   const handleEdit = useCallback(() => {
@@ -183,6 +339,32 @@ export default function NoteDetailScreen() {
     };
   }, []);
 
+  // Show draft recovery modal when there's a draft to recover
+  useEffect(() => {
+    if (hasDraftToRecover && actionsInitialized) {
+      setShowDraftRecoveryModal(true);
+    }
+  }, [hasDraftToRecover, actionsInitialized]);
+
+  // Navigation guard for unsaved changes
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('beforeRemove', (e) => {
+      // Only block if there are unsaved action changes
+      if (!hasUnsavedActionChanges) {
+        return;
+      }
+
+      // Prevent default behavior of leaving the screen
+      e.preventDefault();
+
+      // Store the navigation action to execute if user confirms
+      setPendingNavigationAction(() => () => navigation.dispatch(e.data.action));
+      setShowExitConfirmModal(true);
+    });
+
+    return unsubscribe;
+  }, [navigation, hasUnsavedActionChanges]);
+
   // Format recording duration as MM:SS
   const formatRecordingTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -220,6 +402,57 @@ export default function NoteDetailScreen() {
     setShowRecordingModal(false);
   }, [cancelRecording]);
 
+  // Handle exit confirmation modal actions
+  const handleConfirmExit = useCallback(() => {
+    setShowExitConfirmModal(false);
+    discardActionChanges();
+    if (pendingNavigationAction) {
+      pendingNavigationAction();
+      setPendingNavigationAction(null);
+    }
+  }, [discardActionChanges, pendingNavigationAction]);
+
+  const handleSaveAndExit = useCallback(async () => {
+    const success = await saveActionsToServer();
+    if (success) {
+      setShowExitConfirmModal(false);
+      if (pendingNavigationAction) {
+        pendingNavigationAction();
+        setPendingNavigationAction(null);
+      }
+    } else {
+      Alert.alert('Save Failed', 'Unable to save changes. Please try again.');
+    }
+  }, [saveActionsToServer, pendingNavigationAction]);
+
+  const handleCancelExit = useCallback(() => {
+    setShowExitConfirmModal(false);
+    setPendingNavigationAction(null);
+  }, []);
+
+  // Handle draft recovery modal actions
+  const handleRecoverDraft = useCallback(() => {
+    recoverDraft();
+    setShowDraftRecoveryModal(false);
+  }, [recoverDraft]);
+
+  const handleDiscardDraft = useCallback(async () => {
+    await discardDraft();
+    setShowDraftRecoveryModal(false);
+  }, [discardDraft]);
+
+  // Format draft timestamp for display
+  const formatDraftTime = useCallback((timestamp: string | null) => {
+    if (!timestamp) return '';
+    const date = new Date(timestamp);
+    return date.toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+  }, []);
+
   if (isLoading) {
     return (
       <SafeAreaView style={styles.container}>
@@ -254,26 +487,10 @@ export default function NoteDetailScreen() {
     });
   };
 
-  const handleViewDraft = async (emailId: string) => {
-    // Execute the email action to open draft in Gmail/Apple Mail
-    const result = await executeAction(emailId, 'google');
-    if (result?.redirect_url) {
-      // In a real app, open the URL in browser
-      console.log('Open draft:', result.redirect_url);
-    }
-  };
-
   const handleExecuteAction = async (actionId: string, service: 'google' | 'apple') => {
     const result = await executeAction(actionId, service);
     if (result) {
       Alert.alert('Success', result.message || 'Action executed successfully');
-    }
-  };
-
-  const handleCompleteAction = async (actionId: string) => {
-    const success = await completeAction(actionId);
-    if (success) {
-      Alert.alert('Success', 'Action marked as complete');
     }
   };
 
@@ -307,45 +524,13 @@ export default function NoteDetailScreen() {
     );
   };
 
-  // Convert rawNote actions to the format expected by AISummaryPanel
-  const extractTime = (dateStr: string | null) => {
-    if (!dateStr) return '';
-    return new Date(dateStr).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+  // Calculate action counts for the floating bar (excluding deleted)
+  const actionCounts: ActionCounts = {
+    calendar: editableCalendarActions.filter(a => !a.isDeleted).length,
+    email: editableEmailActions.filter(a => !a.isDeleted).length,
+    reminders: editableReminderActions.filter(a => !a.isDeleted).length,
+    nextSteps: editableNextStepActions.filter(a => !a.isDeleted).length,
   };
-
-  const actions = rawNote?.actions ? {
-    calendar: rawNote.actions
-      .filter(a => a.action_type === 'calendar')
-      .map(a => ({
-        id: a.id,
-        title: a.title,
-        date: a.scheduled_date || '',
-        time: extractTime(a.scheduled_date),
-        status: a.status,
-      })),
-    email: rawNote.actions
-      .filter(a => a.action_type === 'email')
-      .map(a => ({
-        id: a.id,
-        to: a.email_to || '',
-        subject: a.email_subject || a.title,
-        preview: a.email_body?.slice(0, 100) || '',
-        status: (a.status === 'executed' ? 'sent' : 'draft') as 'draft' | 'sent',
-      })),
-    reminders: rawNote.actions
-      .filter(a => a.action_type === 'reminder')
-      .map(a => ({
-        id: a.id,
-        title: a.title,
-        dueDate: a.scheduled_date || '',
-        dueTime: extractTime(a.scheduled_date),
-        priority: a.priority,
-        status: a.status,
-      })),
-    nextSteps: rawNote.actions
-      .filter(a => a.action_type === 'next_step')
-      .map(a => a.title),
-  } : note.actions;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -373,6 +558,14 @@ export default function NoteDetailScreen() {
         <View style={styles.savingIndicator}>
           <ActivityIndicator size="small" color={NotesColors.primary} />
           <Text style={styles.savingText}>Saving...</Text>
+        </View>
+      )}
+
+      {/* Unsaved Actions Indicator */}
+      {hasUnsavedActionChanges && !isSaving && (
+        <View style={styles.unsavedIndicator}>
+          <Ionicons name="ellipse" size={8} color={NotesColors.primary} />
+          <Text style={styles.unsavedText}>Unsaved changes</Text>
         </View>
       )}
 
@@ -425,41 +618,43 @@ export default function NoteDetailScreen() {
           )}
         </View>
 
-        {/* AI Summary Panel - CRITICAL COMPONENT */}
-        <AISummaryPanel
-          actions={actions}
-          onViewDraft={handleViewDraft}
-          onExecuteAction={isAuthenticated ? handleExecuteAction : undefined}
-          onCompleteAction={isAuthenticated ? handleCompleteAction : undefined}
-        />
+        {/* Floating Action Bar - Collapsible actions panel */}
+        <FloatingActionBar
+          counts={actionCounts}
+          isExpanded={isActionsExpanded}
+          onToggleExpand={() => setIsActionsExpanded(!isActionsExpanded)}
+        >
+          <EditableActionsPanel
+            calendarActions={editableCalendarActions}
+            emailActions={editableEmailActions}
+            reminderActions={editableReminderActions}
+            nextStepActions={editableNextStepActions}
+            onUpdateAction={handleUpdateAction}
+            onDeleteAction={handleDeleteAction}
+            onAddAction={handleAddAction}
+            onExecuteAction={isAuthenticated ? handleExecuteAction : undefined}
+          />
+        </FloatingActionBar>
 
-        {/* Transcript Section */}
-        <View style={styles.transcriptSection}>
-          <View style={styles.transcriptHeader}>
-            <Ionicons name="document-text-outline" size={20} color={NotesColors.primary} />
-            <Text style={styles.transcriptTitle}>Full Transcript</Text>
-          </View>
-          <View style={styles.transcriptCard}>
-            {isEditing ? (
-              <TextInput
-                ref={transcriptInputRef}
-                style={styles.transcriptInput}
-                value={editedTranscript}
-                onChangeText={handleTranscriptChange}
-                onFocus={() => setIsTranscriptFocused(true)}
-                onBlur={handleTranscriptBlur}
-                placeholder="Transcript content"
-                placeholderTextColor={NotesColors.textSecondary}
-                multiline
-                textAlignVertical="top"
-              />
-            ) : (
-              <TouchableOpacity onPress={handleEdit} activeOpacity={0.7}>
-                <Text style={styles.transcriptText}>{note.transcript}</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        </View>
+        {/* Transcript - flows naturally below tags/actions */}
+        {isEditing ? (
+          <TextInput
+            ref={transcriptInputRef}
+            style={styles.transcriptText}
+            value={editedTranscript}
+            onChangeText={handleTranscriptChange}
+            onFocus={() => setIsTranscriptFocused(true)}
+            onBlur={handleTranscriptBlur}
+            placeholder="Start typing..."
+            placeholderTextColor={NotesColors.textSecondary}
+            multiline
+            textAlignVertical="top"
+          />
+        ) : (
+          <TouchableOpacity onPress={handleEdit} activeOpacity={0.7}>
+            <Text style={styles.transcriptText}>{note.transcript}</Text>
+          </TouchableOpacity>
+        )}
       </ScrollView>
 
       {/* Bottom Toolbar */}
@@ -562,6 +757,75 @@ export default function NoteDetailScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Exit Confirmation Modal */}
+      <Modal
+        visible={showExitConfirmModal}
+        transparent
+        animationType="fade"
+        onRequestClose={handleCancelExit}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.confirmModal}>
+            <Text style={styles.confirmModalTitle}>Unsaved Changes</Text>
+            <Text style={styles.confirmModalText}>
+              You have unsaved changes to your actions. What would you like to do?
+            </Text>
+            <View style={styles.confirmModalButtons}>
+              <TouchableOpacity
+                style={[styles.confirmButton, styles.discardButton]}
+                onPress={handleConfirmExit}
+              >
+                <Text style={styles.discardButtonText}>Discard</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.confirmButton, styles.saveButton]}
+                onPress={handleSaveAndExit}
+              >
+                <Text style={styles.saveButtonText}>Save & Exit</Text>
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity
+              style={styles.cancelExitButton}
+              onPress={handleCancelExit}
+            >
+              <Text style={styles.cancelExitButtonText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Draft Recovery Modal */}
+      <Modal
+        visible={showDraftRecoveryModal}
+        transparent
+        animationType="fade"
+        onRequestClose={handleDiscardDraft}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.confirmModal}>
+            <Ionicons name="document-text-outline" size={40} color={NotesColors.primary} style={styles.recoveryIcon} />
+            <Text style={styles.confirmModalTitle}>Recover Draft?</Text>
+            <Text style={styles.confirmModalText}>
+              You have unsaved changes from {formatDraftTime(draftTimestamp)}. Would you like to recover them?
+            </Text>
+            <View style={styles.confirmModalButtons}>
+              <TouchableOpacity
+                style={[styles.confirmButton, styles.discardButton]}
+                onPress={handleDiscardDraft}
+              >
+                <Text style={styles.discardButtonText}>Discard</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.confirmButton, styles.saveButton]}
+                onPress={handleRecoverDraft}
+              >
+                <Text style={styles.saveButtonText}>Recover</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -603,6 +867,18 @@ const styles = StyleSheet.create({
   },
   savingText: {
     fontSize: 14,
+    color: NotesColors.textSecondary,
+  },
+  unsavedIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 6,
+    backgroundColor: 'rgba(98, 69, 135, 0.08)',
+  },
+  unsavedText: {
+    fontSize: 12,
     color: NotesColors.textSecondary,
   },
   scrollView: {
@@ -658,36 +934,12 @@ const styles = StyleSheet.create({
     color: NotesColors.primary,
     fontWeight: '500',
   },
-  transcriptSection: {
-    marginTop: 8,
-  },
-  transcriptHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 12,
-  },
-  transcriptTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: NotesColors.textPrimary,
-  },
-  transcriptCard: {
-    backgroundColor: NotesColors.card,
-    borderRadius: 12,
-    padding: 16,
-  },
   transcriptText: {
     fontSize: 16,
     lineHeight: 26,
     color: NotesColors.textPrimary,
-  },
-  transcriptInput: {
-    fontSize: 16,
-    lineHeight: 26,
-    color: NotesColors.textPrimary,
-    padding: 0,
-    minHeight: 200,
+    marginTop: 8,
+    minHeight: 100,
   },
   toolbar: {
     flexDirection: 'row',
@@ -797,5 +1049,64 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#FF3B30',
     marginTop: 16,
+  },
+  // Exit Confirmation and Draft Recovery Modal styles
+  confirmModal: {
+    width: '100%',
+    backgroundColor: NotesColors.card,
+    borderRadius: 20,
+    padding: 24,
+    alignItems: 'center',
+  },
+  confirmModalTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: NotesColors.textPrimary,
+    marginBottom: 12,
+  },
+  confirmModalText: {
+    fontSize: 15,
+    color: NotesColors.textSecondary,
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 22,
+  },
+  confirmModalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+  },
+  confirmButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  discardButton: {
+    backgroundColor: 'rgba(255, 59, 48, 0.15)',
+  },
+  discardButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FF3B30',
+  },
+  saveButton: {
+    backgroundColor: NotesColors.primary,
+  },
+  saveButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#fff',
+  },
+  cancelExitButton: {
+    marginTop: 16,
+    paddingVertical: 10,
+  },
+  cancelExitButtonText: {
+    fontSize: 16,
+    color: NotesColors.textSecondary,
+  },
+  recoveryIcon: {
+    marginBottom: 12,
   },
 });

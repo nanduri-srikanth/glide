@@ -9,6 +9,9 @@ import { NotesColors } from '@/constants/theme';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { NotesProvider } from '@/context/NotesContext';
 
+// DEV MODE: Set to true to skip authentication for testing
+const DEV_SKIP_AUTH = true;
+
 export const unstable_settings = {
   anchor: '(tabs)',
 };
@@ -32,6 +35,9 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
 
   useEffect(() => {
+    // Skip auth redirect in dev mode
+    if (DEV_SKIP_AUTH) return;
+
     if (isLoading) return;
 
     const inAuthGroup = segments[0] === 'auth';
@@ -45,7 +51,8 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     }
   }, [isAuthenticated, isLoading, segments]);
 
-  if (isLoading) {
+  // Skip loading screen in dev mode
+  if (!DEV_SKIP_AUTH && isLoading) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={NotesColors.primary} />

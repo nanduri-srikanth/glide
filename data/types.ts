@@ -1,7 +1,15 @@
 // TypeScript interfaces for the Notes app
 
-export interface CalendarAction {
+// Base interface for all actions - supports future versioning
+export interface BaseAction {
   id: string;
+  source?: 'ai' | 'user';  // Whether AI extracted or user created (optional for backwards compat)
+  isNew?: boolean;         // Locally created, not yet saved to server
+  isDeleted?: boolean;     // Soft delete for tracking changes
+  isModified?: boolean;    // User has edited this action
+}
+
+export interface CalendarAction extends BaseAction {
   title: string;
   date: string;
   time?: string;
@@ -10,17 +18,16 @@ export interface CalendarAction {
   status: 'created' | 'pending' | 'confirmed';
 }
 
-export interface EmailAction {
-  id: string;
+export interface EmailAction extends BaseAction {
   to: string;
   subject: string;
-  preview: string;
+  body?: string;
+  preview?: string;
   status: 'draft' | 'sent' | 'scheduled';
   scheduledTime?: string;
 }
 
-export interface ReminderAction {
-  id: string;
+export interface ReminderAction extends BaseAction {
   title: string;
   dueDate: string;
   dueTime?: string;
@@ -28,12 +35,20 @@ export interface ReminderAction {
   status: 'pending' | 'completed';
 }
 
+export interface NextStepAction extends BaseAction {
+  title: string;
+  status: 'pending' | 'completed';
+}
+
 export interface NoteActions {
   calendar: CalendarAction[];
   email: EmailAction[];
   reminders: ReminderAction[];
-  nextSteps: string[];
+  nextSteps: string[];  // Keep as string[] for backwards compatibility
 }
+
+// Editable action type union for the action bar
+export type EditableAction = CalendarAction | EmailAction | ReminderAction | NextStepAction;
 
 export interface Note {
   id: string;

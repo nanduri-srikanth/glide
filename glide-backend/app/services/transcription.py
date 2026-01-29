@@ -1,8 +1,7 @@
-"""Transcription service using OpenAI Whisper API."""
+"""Transcription service using Groq Whisper API."""
 import os
 import tempfile
 from typing import BinaryIO
-import openai
 
 from app.config import get_settings
 from app.schemas.voice_schemas import TranscriptionResult
@@ -10,15 +9,20 @@ from app.utils.audio import get_audio_duration
 
 
 class TranscriptionService:
-    """Service for audio transcription using OpenAI Whisper."""
+    """Service for audio transcription using Groq Whisper."""
 
     def __init__(self):
         settings = get_settings()
-        self.client = openai.OpenAI(api_key=settings.openai_api_key) if settings.openai_api_key else None
+        self.groq_client = None
+
+        # Use Groq for transcription (primary)
+        if settings.groq_api_key:
+            from groq import Groq
+            self.groq_client = Groq(api_key=settings.groq_api_key)
 
     async def transcribe(self, audio_file: BinaryIO, filename: str) -> TranscriptionResult:
         """
-        Transcribe audio file using Whisper API.
+        Transcribe audio file using Groq Whisper API.
 
         Args:
             audio_file: Binary audio file
@@ -37,28 +41,28 @@ class TranscriptionService:
             # Get audio duration
             duration = get_audio_duration(temp_path)
 
-            # If no OpenAI client, return mock transcription
-            if not self.client:
+            # If no Groq client, return mock transcription
+            if not self.groq_client:
                 return TranscriptionResult(
-                    text="[Transcription unavailable - OpenAI API key not configured]",
+                    text="[Transcription unavailable - Groq API key not configured]",
                     language="en",
                     duration=duration,
                     confidence=None,
                 )
 
-            # Transcribe using Whisper API
+            # Transcribe using Groq Whisper API
             with open(temp_path, "rb") as audio:
-                response = self.client.audio.transcriptions.create(
-                    model="whisper-1",
+                response = self.groq_client.audio.transcriptions.create(
+                    model="whisper-large-v3",
                     file=audio,
                     response_format="verbose_json",
                 )
 
             return TranscriptionResult(
                 text=response.text,
-                language=response.language or "en",
+                language=getattr(response, 'language', 'en') or "en",
                 duration=duration,
-                confidence=None,  # Whisper doesn't provide confidence scores
+                confidence=None,
             )
 
         finally:
@@ -90,24 +94,24 @@ class TranscriptionService:
         try:
             duration = get_audio_duration(temp_path)
 
-            # If no OpenAI client, return mock transcription
-            if not self.client:
+            # If no Groq client, return mock transcription
+            if not self.groq_client:
                 return TranscriptionResult(
-                    text="[Transcription unavailable - OpenAI API key not configured]",
+                    text="[Transcription unavailable - Groq API key not configured]",
                     language="en",
                     duration=duration,
                 )
 
             with open(temp_path, "rb") as audio:
-                whisper_response = self.client.audio.transcriptions.create(
-                    model="whisper-1",
+                groq_response = self.groq_client.audio.transcriptions.create(
+                    model="whisper-large-v3",
                     file=audio,
                     response_format="verbose_json",
                 )
 
             return TranscriptionResult(
-                text=whisper_response.text,
-                language=whisper_response.language or "en",
+                text=groq_response.text,
+                language=getattr(groq_response, 'language', 'en') or "en",
                 duration=duration,
             )
         finally:

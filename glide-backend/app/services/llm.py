@@ -1,4 +1,4 @@
-"""LLM service using Anthropic Claude for action extraction."""
+"""LLM service using Groq for fast action extraction."""
 import json
 from datetime import datetime
 from typing import Optional
@@ -8,15 +8,18 @@ from app.schemas.voice_schemas import ActionExtractionResult
 
 
 class LLMService:
-    """Service for AI-powered action extraction using Claude."""
+    """Service for AI-powered action extraction using Groq LLM."""
+
+    # Groq model to use - llama-3.3-70b-versatile for best quality
+    MODEL = "llama-3.3-70b-versatile"
 
     def __init__(self):
         settings = get_settings()
-        self.api_key = settings.anthropic_api_key
         self.client = None
-        if self.api_key:
-            from anthropic import Anthropic
-            self.client = Anthropic(api_key=self.api_key)
+
+        if settings.groq_api_key:
+            from groq import Groq
+            self.client = Groq(api_key=settings.groq_api_key)
 
     async def extract_actions(
         self,
@@ -24,7 +27,7 @@ class LLMService:
         user_context: Optional[dict] = None
     ) -> ActionExtractionResult:
         """
-        Analyze transcript and extract actionable items using Claude.
+        Analyze transcript and extract actionable items using Groq LLM.
 
         Args:
             transcript: The transcribed text from voice memo
@@ -97,14 +100,14 @@ Rules:
 6. If no actions of a type are found, use empty array []
 7. Return ONLY the JSON object, nothing else"""
 
-        response = self.client.messages.create(
-            model="claude-sonnet-4-20250514",
+        response = self.client.chat.completions.create(
+            model=self.MODEL,
             max_tokens=2000,
             messages=[{"role": "user", "content": prompt}]
         )
 
         # Parse JSON response
-        response_text = response.content[0].text.strip()
+        response_text = response.choices[0].message.content.strip()
 
         # Handle potential markdown code blocks
         if response_text.startswith("```"):
@@ -256,14 +259,14 @@ Rules:
 5. Only add new tags that are relevant to the new content
 6. Return ONLY the JSON object, nothing else"""
 
-        response = self.client.messages.create(
-            model="claude-sonnet-4-20250514",
+        response = self.client.chat.completions.create(
+            model=self.MODEL,
             max_tokens=2000,
             messages=[{"role": "user", "content": prompt}]
         )
 
         # Parse JSON response
-        response_text = response.content[0].text.strip()
+        response_text = response.choices[0].message.content.strip()
 
         # Handle potential markdown code blocks
         if response_text.startswith("```"):
@@ -319,7 +322,7 @@ Rules:
         if not self.client:
             return {
                 "subject": f"Re: {purpose}",
-                "body": f"[AI draft unavailable - connect Anthropic API]\n\nContext: {context[:200]}..."
+                "body": f"[AI draft unavailable - connect Groq API]\n\nContext: {context[:200]}..."
             }
 
         prompt = f"""Generate a professional email draft.
@@ -336,13 +339,13 @@ Return JSON with:
 
 Return ONLY valid JSON."""
 
-        response = self.client.messages.create(
-            model="claude-sonnet-4-20250514",
+        response = self.client.chat.completions.create(
+            model=self.MODEL,
             max_tokens=1000,
             messages=[{"role": "user", "content": prompt}]
         )
 
-        response_text = response.content[0].text.strip()
+        response_text = response.choices[0].message.content.strip()
         if response_text.startswith("```"):
             response_text = response_text.split("```")[1]
             if response_text.startswith("json"):
@@ -371,10 +374,10 @@ Return ONLY valid JSON."""
 
 Return only the summary text, no formatting."""
 
-        response = self.client.messages.create(
-            model="claude-sonnet-4-20250514",
+        response = self.client.chat.completions.create(
+            model=self.MODEL,
             max_tokens=200,
             messages=[{"role": "user", "content": prompt}]
         )
 
-        return response.content[0].text.strip()
+        return response.choices[0].message.content.strip()

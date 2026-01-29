@@ -28,9 +28,10 @@ interface AISummaryPanelProps {
   onViewDraft?: (emailId: string) => void;
   onExecuteAction?: (actionId: string, service: 'google' | 'apple') => void;
   onCompleteAction?: (actionId: string) => void;
+  embedded?: boolean; // When true, removes container styling (used inside FloatingActionBar)
 }
 
-export function AISummaryPanel({ actions, onViewDraft, onExecuteAction, onCompleteAction }: AISummaryPanelProps) {
+export function AISummaryPanel({ actions, onViewDraft, onExecuteAction, onCompleteAction, embedded = false }: AISummaryPanelProps) {
   const hasAnyActions =
     actions.calendar.length > 0 ||
     actions.email.length > 0 ||
@@ -176,11 +177,13 @@ export function AISummaryPanel({ actions, onViewDraft, onExecuteAction, onComple
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.sparkle}>✨</Text>
-        <Text style={styles.headerTitle}>Actions Taken</Text>
-      </View>
+    <View style={embedded ? styles.embeddedContainer : styles.container}>
+      {!embedded && (
+        <View style={styles.header}>
+          <Text style={styles.sparkle}>✨</Text>
+          <Text style={styles.headerTitle}>Actions Taken</Text>
+        </View>
+      )}
 
       {actions.calendar.length > 0 && (
         <View style={styles.section}>
@@ -223,6 +226,9 @@ const styles = StyleSheet.create({
     borderColor: NotesColors.aiPanelBorder,
     padding: 16,
     marginBottom: 20,
+  },
+  embeddedContainer: {
+    // No background, border, or padding when embedded in FloatingActionBar
   },
   header: {
     flexDirection: 'row',

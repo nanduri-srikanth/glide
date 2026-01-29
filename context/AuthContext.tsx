@@ -7,6 +7,12 @@ import { authService, User } from '@/services/auth';
 import { notesService } from '@/services/notes';
 import api from '@/services/api';
 
+// DEV MODE: Auto-login with test credentials
+// Set DEV_AUTO_LOGIN to true and provide test user credentials
+const DEV_AUTO_LOGIN = true;
+const DEV_TEST_EMAIL = 'devtest@glide.app';
+const DEV_TEST_PASSWORD = 'devtest123';
+
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
@@ -40,6 +46,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           } catch (e) {
             // Ignore - folders may already exist
           }
+        }
+      } else if (DEV_AUTO_LOGIN) {
+        // DEV MODE: Auto-login with test credentials
+        console.log('[DEV] Auto-logging in with test credentials...');
+        const result = await authService.login({
+          email: DEV_TEST_EMAIL,
+          password: DEV_TEST_PASSWORD
+        });
+        if (result.success) {
+          const { user: userData } = await authService.getCurrentUser();
+          if (userData) {
+            setUser(userData);
+            console.log('[DEV] Auto-login successful:', userData.email);
+            try {
+              await notesService.setupDefaultFolders();
+            } catch (e) {
+              // Ignore - folders may already exist
+            }
+          }
+        } else {
+          console.log('[DEV] Auto-login failed:', result.error);
+          console.log('[DEV] Make sure test user exists: email=' + DEV_TEST_EMAIL);
         }
       }
     } catch (error) {
