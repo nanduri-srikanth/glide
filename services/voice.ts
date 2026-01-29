@@ -14,8 +14,41 @@ export interface VoiceProcessingResponse {
   folder_name: string;
   tags: string[];
   actions: ActionExtractionResult;
-  actions_count: number;
+  actions_count?: number;
   created_at: string;
+}
+
+export interface InputHistoryEntry {
+  type: 'text' | 'audio';
+  content: string;
+  timestamp: string;
+  duration?: number;
+  audio_key?: string;
+}
+
+export interface UpdateDecision {
+  update_type: 'append' | 'resynthesize';
+  confidence: number;
+  reason: string;
+}
+
+export interface SynthesisResponse {
+  note_id: string;
+  title: string;
+  narrative: string;
+  raw_inputs: InputHistoryEntry[];
+  summary: string | null;
+  duration: number;
+  folder_id: string | null;
+  folder_name: string;
+  tags: string[];
+  actions: ActionExtractionResult;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SmartSynthesisResponse extends SynthesisResponse {
+  decision?: UpdateDecision;
 }
 
 export interface ActionExtractionResult {
@@ -117,6 +150,172 @@ class VoiceService {
       return { data: response.data };
     } catch (error) {
       return { error: error instanceof Error ? error.message : 'Transcription failed' };
+    }
+  }
+
+  /**
+   * Synthesize a note from text and/or audio.
+   * This is the new primary method for creating notes.
+   */
+  async synthesizeNote(
+    options: {
+      textInput?: string;
+      audioUri?: string;
+      folderId?: string;
+    },
+    onProgress?: (progress: number, status: string) => void
+  ): Promise<{ data?: SynthesisResponse; error?: string }> {
+    try {
+      const { textInput, audioUri, folderId } = options;
+
+      if (!textInput?.trim() && !audioUri) {
+        return { error: 'Please provide text or audio' };
+      }
+
+      onProgress?.(10, 'Preparing...');
+
+      const formData = new FormData();
+
+      // Add text input if provided
+      if (textInput?.trim()) {
+        formData.append('text_input', textInput.trim());
+      }
+
+      // Add audio file if provided
+      if (audioUri) {
+        const filename = audioUri.split('/').pop() || 'recording.m4a';
+        const fileType = this.getContentType(filename);
+        formData.append('audio_file', {
+          uri: audioUri,
+          name: filename,
+          type: fileType,
+        } as unknown as Blob);
+        onProgress?.(20, 'Uploading audio...');
+      }
+
+      // Add folder if specified
+      if (folderId) {
+        formData.append('folder_id', folderId);
+      }
+
+      onProgress?.(40, audioUri ? 'Transcribing audio...' : 'Processing...');
+
+      const response = await api.postFormData<SynthesisResponse>('/voice/synthesize', formData);
+
+      if (response.error) return { error: response.error.message };
+
+      onProgress?.(80, 'Extracting actions...');
+      onProgress?.(100, 'Complete!');
+
+      return { data: response.data };
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : 'Failed to synthesize note' };
+    }
+  }
+
+  /**
+   * Add more content to an existing note with smart synthesis.
+   */
+  async addToNote(
+    noteId: string,
+    options: {
+      textInput?: string;
+      audioUri?: string;
+      resynthesize?: boolean;
+      autoDecide?: boolean;
+    },
+    onProgress?: (progress: number, status: string) => void
+  ): Promise<{ data?: SmartSynthesisResponse; error?: string }> {
+    try {
+      const { textInput, audioUri, resynthesize, autoDecide = true } = options;
+
+      if (!textInput?.trim() && !audioUri) {
+        return { error: 'Please provide text or audio' };
+      }
+
+      onProgress?.(10, 'Preparing...');
+
+      const formData = new FormData();
+
+      if (textInput?.trim()) {
+        formData.append('text_input', textInput.trim());
+      }
+
+      if (audioUri) {
+        const filename = audioUri.split('/').pop() || 'recording_add.m4a';
+        const fileType = this.getContentType(filename);
+        formData.append('audio_file', {
+          uri: audioUri,
+          name: filename,
+          type: fileType,
+        } as unknown as Blob);
+        onProgress?.(20, 'Uploading audio...');
+      }
+
+      // Only add resynthesize if explicitly set (not undefined)
+      if (resynthesize !== undefined) {
+        formData.append('resynthesize', resynthesize.toString());
+      }
+      formData.append('auto_decide', autoDecide.toString());
+
+      onProgress?.(40, audioUri ? 'Transcribing...' : 'Processing...');
+
+      const response = await api.postFormData<SmartSynthesisResponse>(
+        `/voice/synthesize/${noteId}`,
+        formData
+      );
+
+      if (response.error) return { error: response.error.message };
+
+      onProgress?.(100, 'Complete!');
+      return { data: response.data };
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : 'Failed to add to note' };
+    }
+  }
+
+  /**
+   * Delete an input from a note's input history.
+   */
+  async deleteInput(
+    noteId: string,
+    inputIndex: number,
+    onProgress?: (progress: number, status: string) => void
+  ): Promise<{ data?: SynthesisResponse; error?: string }> {
+    try {
+      onProgress?.(20, 'Deleting input...');
+
+      const response = await api.delete<SynthesisResponse>(
+        `/voice/notes/${noteId}/inputs/${inputIndex}`
+      );
+
+      if (response.error) return { error: response.error.message };
+
+      onProgress?.(100, 'Complete!');
+      return { data: response.data };
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : 'Failed to delete input' };
+    }
+  }
+
+  /**
+   * Re-synthesize an existing note from its input history.
+   */
+  async resynthesizeNote(
+    noteId: string,
+    onProgress?: (progress: number, status: string) => void
+  ): Promise<{ data?: SynthesisResponse; error?: string }> {
+    try {
+      onProgress?.(20, 'Re-synthesizing...');
+
+      const response = await api.post<SynthesisResponse>(`/voice/resynthesize/${noteId}`, {});
+
+      if (response.error) return { error: response.error.message };
+
+      onProgress?.(100, 'Complete!');
+      return { data: response.data };
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : 'Failed to resynthesize note' };
     }
   }
 

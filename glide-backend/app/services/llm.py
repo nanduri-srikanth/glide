@@ -354,6 +354,448 @@ Return ONLY valid JSON."""
 
         return json.loads(response_text)
 
+    async def synthesize_content(
+        self,
+        text_input: str = "",
+        audio_transcript: str = "",
+        user_context: Optional[dict] = None
+    ) -> dict:
+        """
+        Synthesize text input and audio transcription into a cohesive narrative.
+
+        Args:
+            text_input: User's typed text
+            audio_transcript: Transcribed audio content
+            user_context: Optional context about the user
+
+        Returns:
+            dict with narrative, title, folder, tags, summary, and extracted actions
+        """
+        # Combine inputs for context
+        combined_content = ""
+        if text_input and audio_transcript:
+            combined_content = f"TYPED TEXT:\n{text_input}\n\nSPOKEN AUDIO:\n{audio_transcript}"
+        elif text_input:
+            combined_content = text_input
+        elif audio_transcript:
+            combined_content = audio_transcript
+        else:
+            # No content provided
+            return {
+                "narrative": "",
+                "title": "Empty Note",
+                "folder": "Personal",
+                "tags": [],
+                "summary": None,
+                "calendar": [],
+                "email": [],
+                "reminders": [],
+                "next_steps": [],
+            }
+
+        # Return mock response when API key not configured
+        if not self.client:
+            return self._mock_synthesis(combined_content, text_input, audio_transcript)
+
+        context_str = ""
+        if user_context:
+            context_str = f"""
+User context:
+- Timezone: {user_context.get('timezone', 'America/Chicago')}
+- Current date: {user_context.get('current_date', 'today')}
+"""
+
+        prompt = f"""You are helping synthesize a user's thoughts into a cohesive note.
+The user may have provided TYPED TEXT and/or SPOKEN AUDIO (transcribed).
+Your job is to merge these into ONE coherent narrative that flows naturally.
+
+{combined_content}
+
+{context_str}
+
+IMPORTANT INSTRUCTIONS:
+1. Create a single, cohesive narrative that integrates both inputs naturally
+2. Do NOT separate "typed" vs "spoken" - merge them into one flowing text
+3. Fix grammar, remove filler words, but preserve the user's voice and intent
+4. If there are contradictions, prefer the more recent/specific information
+5. Extract any actionable items mentioned
+
+Return ONLY valid JSON (no markdown, no explanation) with this exact structure:
+{{
+  "narrative": "The synthesized, cohesive narrative combining all inputs",
+  "title": "Brief descriptive title for this note (5-10 words max)",
+  "folder": "Work|Personal|Ideas|Meetings|Projects",
+  "tags": ["relevant", "tags", "max5"],
+  "summary": "2-3 sentence summary of the key points",
+  "calendar": [
+    {{
+      "title": "Event name",
+      "date": "YYYY-MM-DD",
+      "time": "HH:MM (24hr, optional)",
+      "location": "optional location",
+      "attendees": ["optional", "attendees"]
+    }}
+  ],
+  "email": [
+    {{
+      "to": "email@example.com or descriptive name",
+      "subject": "Email subject line",
+      "body": "Draft email body content"
+    }}
+  ],
+  "reminders": [
+    {{
+      "title": "Reminder text",
+      "due_date": "YYYY-MM-DD",
+      "due_time": "HH:MM (optional)",
+      "priority": "low|medium|high"
+    }}
+  ],
+  "next_steps": [
+    "Action item 1",
+    "Action item 2"
+  ]
+}}
+
+Rules:
+1. The narrative should read as ONE cohesive piece, not sections
+2. Only include actions that are explicitly mentioned or strongly implied
+3. Use realistic dates based on context
+4. If no actions of a type are found, use empty array []
+5. Return ONLY the JSON object, nothing else"""
+
+        response = self.client.chat.completions.create(
+            model=self.MODEL,
+            max_tokens=3000,
+            messages=[{"role": "user", "content": prompt}]
+        )
+
+        # Parse JSON response
+        response_text = response.choices[0].message.content.strip()
+
+        # Handle potential markdown code blocks
+        if response_text.startswith("```"):
+            response_text = response_text.split("```")[1]
+            if response_text.startswith("json"):
+                response_text = response_text[4:]
+            response_text = response_text.strip()
+
+        try:
+            data = json.loads(response_text)
+        except json.JSONDecodeError:
+            # Fallback if JSON parsing fails
+            return {
+                "narrative": combined_content,
+                "title": "Voice Note",
+                "folder": "Personal",
+                "tags": [],
+                "summary": combined_content[:200] + "..." if len(combined_content) > 200 else combined_content,
+                "calendar": [],
+                "email": [],
+                "reminders": [],
+                "next_steps": [],
+            }
+
+        return {
+            "narrative": data.get("narrative", combined_content),
+            "title": data.get("title", "Voice Note"),
+            "folder": data.get("folder", "Personal"),
+            "tags": data.get("tags", [])[:5],
+            "summary": data.get("summary"),
+            "calendar": data.get("calendar", []),
+            "email": data.get("email", []),
+            "reminders": data.get("reminders", []),
+            "next_steps": data.get("next_steps", []),
+        }
+
+    def _mock_synthesis(self, combined: str, text: str, audio: str) -> dict:
+        """Return mock synthesis result for local dev (no API key)."""
+        # Use combined content as narrative
+        narrative = combined
+        if text and audio:
+            narrative = f"{text}\n\n{audio}"
+        elif text:
+            narrative = text
+        elif audio:
+            narrative = audio
+
+        # Generate title from first line
+        words = narrative.split()[:10]
+        title = " ".join(words) + ("..." if len(narrative.split()) > 10 else "")
+        if not title.strip():
+            title = f"Note - {datetime.utcnow().strftime('%b %d, %Y %I:%M %p')}"
+
+        return {
+            "narrative": narrative,
+            "title": title,
+            "folder": "Personal",
+            "tags": [],
+            "summary": narrative[:200] + "..." if len(narrative) > 200 else narrative,
+            "calendar": [],
+            "email": [],
+            "reminders": [],
+            "next_steps": [],
+        }
+
+    async def resynthesize_content(
+        self,
+        input_history: list,
+        user_context: Optional[dict] = None
+    ) -> dict:
+        """
+        Re-synthesize content from a history of inputs.
+        Used when user edits and wants to regenerate the narrative.
+
+        Args:
+            input_history: List of InputHistoryEntry-like dicts with type and content
+            user_context: Optional context about the user
+
+        Returns:
+            dict with narrative, title, folder, tags, summary, and extracted actions
+        """
+        # Combine all inputs in chronological order
+        text_parts = []
+        audio_parts = []
+
+        for entry in input_history:
+            if entry.get("type") == "text":
+                text_parts.append(entry.get("content", ""))
+            elif entry.get("type") == "audio":
+                audio_parts.append(entry.get("content", ""))
+
+        text_input = "\n\n".join(text_parts) if text_parts else ""
+        audio_transcript = "\n\n".join(audio_parts) if audio_parts else ""
+
+        return await self.synthesize_content(text_input, audio_transcript, user_context)
+
+    def should_force_resynthesize(
+        self,
+        existing_narrative: str,
+        new_content: str,
+        input_history: list
+    ) -> tuple[bool, str | None]:
+        """
+        Heuristic pre-checks to determine if we should force a full resynthesize.
+        Returns (should_force, reason) tuple.
+        """
+        existing_len = len(existing_narrative.split())
+        new_len = len(new_content.split())
+
+        # Force resynthesize if new content is >50% of existing length
+        if existing_len > 0 and new_len > existing_len * 0.5:
+            return True, "New content is substantial relative to existing note"
+
+        # Force resynthesize if we have 5+ fragmented inputs
+        if len(input_history) >= 5:
+            return True, "Multiple fragmented inputs benefit from full synthesis"
+
+        # Force resynthesize if existing note is very short (<50 words)
+        if existing_len < 50:
+            return True, "Short note benefits from full synthesis"
+
+        return False, None
+
+    async def smart_synthesize(
+        self,
+        new_content: str,
+        existing_narrative: str,
+        existing_title: str,
+        existing_summary: str | None,
+        input_history: list,
+        user_context: Optional[dict] = None
+    ) -> dict:
+        """
+        Intelligently decide whether to append or resynthesize, then do it.
+        Returns dict with decision info and synthesized result.
+        """
+        # Check heuristics first
+        force_resynth, force_reason = self.should_force_resynthesize(
+            existing_narrative, new_content, input_history
+        )
+
+        if force_resynth:
+            # Add new content to history and do full resynthesize
+            result = await self.resynthesize_content(input_history, user_context)
+            return {
+                "decision": {
+                    "update_type": "resynthesize",
+                    "confidence": 0.95,
+                    "reason": force_reason or "Heuristic check determined resynthesize needed"
+                },
+                "result": result
+            }
+
+        # Return mock response when API key not configured
+        if not self.client:
+            return self._mock_smart_synthesis(
+                new_content, existing_narrative, existing_title, input_history
+            )
+
+        context_str = ""
+        if user_context:
+            context_str = f"""
+User context:
+- Timezone: {user_context.get('timezone', 'America/Chicago')}
+- Current date: {user_context.get('current_date', 'today')}
+"""
+
+        prompt = f"""You are helping update an existing note with new content.
+Analyze the existing note and new content, then decide the best update strategy.
+
+EXISTING NOTE:
+Title: {existing_title}
+Content: {existing_narrative}
+Summary: {existing_summary or 'None'}
+
+NEW CONTENT TO ADD:
+{new_content}
+
+{context_str}
+
+DECISION CRITERIA:
+- Choose RESYNTHESIZE if:
+  * New content contradicts or corrects existing content
+  * Topic has shifted significantly
+  * New content changes the meaning/intent of the note
+  * Major updates that change >30% of the content meaning
+- Choose APPEND if:
+  * New content is purely additive (new details, additions)
+  * Same topic, no contradictions
+  * Just expanding on existing points
+
+Return ONLY valid JSON (no markdown, no explanation) with this structure:
+{{
+  "decision": {{
+    "update_type": "append" or "resynthesize",
+    "confidence": 0.0 to 1.0,
+    "reason": "Brief explanation"
+  }},
+  "result": {{
+    "narrative": "The FULL updated note content (either appended or fully resynthesized)",
+    "title": "Updated title if changed, otherwise keep existing",
+    "folder": "Work|Personal|Ideas|Meetings|Projects",
+    "tags": ["relevant", "tags"],
+    "summary": "Updated 2-3 sentence summary",
+    "calendar": [],
+    "email": [],
+    "reminders": [],
+    "next_steps": []
+  }}
+}}
+
+IMPORTANT:
+- If appending, the narrative should seamlessly integrate the new content
+- If resynthesizing, create a completely fresh narrative from all information
+- Always return the COMPLETE narrative, not just changes"""
+
+        response = self.client.chat.completions.create(
+            model=self.MODEL,
+            max_tokens=4000,
+            messages=[{"role": "user", "content": prompt}]
+        )
+
+        response_text = response.choices[0].message.content.strip()
+
+        # Handle potential markdown code blocks
+        if response_text.startswith("```"):
+            response_text = response_text.split("```")[1]
+            if response_text.startswith("json"):
+                response_text = response_text[4:]
+            response_text = response_text.strip()
+
+        try:
+            data = json.loads(response_text)
+            return {
+                "decision": data.get("decision", {
+                    "update_type": "append",
+                    "confidence": 0.5,
+                    "reason": "Default decision"
+                }),
+                "result": data.get("result", {
+                    "narrative": existing_narrative + "\n\n" + new_content,
+                    "title": existing_title,
+                    "folder": "Personal",
+                    "tags": [],
+                    "summary": existing_summary,
+                    "calendar": [],
+                    "email": [],
+                    "reminders": [],
+                    "next_steps": []
+                })
+            }
+        except json.JSONDecodeError:
+            # Fallback: just append
+            return {
+                "decision": {
+                    "update_type": "append",
+                    "confidence": 0.5,
+                    "reason": "JSON parse failed, defaulting to append"
+                },
+                "result": {
+                    "narrative": existing_narrative + "\n\n" + new_content,
+                    "title": existing_title,
+                    "folder": "Personal",
+                    "tags": [],
+                    "summary": existing_summary,
+                    "calendar": [],
+                    "email": [],
+                    "reminders": [],
+                    "next_steps": []
+                }
+            }
+
+    def _mock_smart_synthesis(
+        self,
+        new_content: str,
+        existing_narrative: str,
+        existing_title: str,
+        input_history: list
+    ) -> dict:
+        """Mock smart synthesis for local dev (no API key)."""
+        # Simple heuristic: if new content is short, append; otherwise resynthesize
+        if len(new_content.split()) < 50:
+            return {
+                "decision": {
+                    "update_type": "append",
+                    "confidence": 0.7,
+                    "reason": "New content is short, appending to existing"
+                },
+                "result": {
+                    "narrative": existing_narrative + "\n\n" + new_content,
+                    "title": existing_title,
+                    "folder": "Personal",
+                    "tags": [],
+                    "summary": None,
+                    "calendar": [],
+                    "email": [],
+                    "reminders": [],
+                    "next_steps": []
+                }
+            }
+        else:
+            # Combine all content for mock resynthesize
+            all_content = "\n\n".join([
+                entry.get("content", "") for entry in input_history
+            ])
+            return {
+                "decision": {
+                    "update_type": "resynthesize",
+                    "confidence": 0.7,
+                    "reason": "Substantial new content, resynthesizing"
+                },
+                "result": {
+                    "narrative": all_content,
+                    "title": existing_title,
+                    "folder": "Personal",
+                    "tags": [],
+                    "summary": None,
+                    "calendar": [],
+                    "email": [],
+                    "reminders": [],
+                    "next_steps": []
+                }
+            }
+
     async def summarize_note(self, transcript: str) -> str:
         """
         Generate a concise summary of a note.

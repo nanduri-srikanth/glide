@@ -32,8 +32,10 @@ import { useRecording } from '@/hooks/useRecording';
 import { useActionDrafts } from '@/hooks/useActionDrafts';
 import { useAuth } from '@/context/AuthContext';
 import { Note } from '@/data/types';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, usePreventRemove } from '@react-navigation/native';
 import { generateTitleFromContent, isUserSetTitle } from '@/utils/textUtils';
+import { AddContentModal } from '@/components/notes/AddContentModal';
+import { InputHistoryEntry } from '@/services/voice';
 
 // Convert mock note actions to server action format for the useActionDrafts hook
 function convertMockActionsToServerFormat(actions: NoteActions | undefined) {
@@ -117,18 +119,15 @@ export default function NoteDetailScreen() {
     updateNote,
     executeAction,
     appendAudio,
+    addContent,
+    deleteInput,
+    resynthesizeNote,
+    inputHistory,
+    lastDecision,
     isAppending,
     appendProgress,
     appendStatus,
   } = useNoteDetail(noteId);
-  const {
-    isRecording,
-    duration: recordingDuration,
-    startRecording,
-    stopRecording,
-    cancelRecording,
-    error: recordingError,
-  } = useRecording();
 
   const navigation = useNavigation();
 
@@ -170,8 +169,9 @@ export default function NoteDetailScreen() {
   });
 
   const [isDeleting, setIsDeleting] = useState(false);
-  const [showRecordingModal, setShowRecordingModal] = useState(false);
-  const [isActionsExpanded, setIsActionsExpanded] = useState(true); // Start expanded on first view
+  const [showAddContentModal, setShowAddContentModal] = useState(false);
+  const [isActionsExpanded, setIsActionsExpanded] = useState(false); // Start collapsed
+  const [isInputsExpanded, setIsInputsExpanded] = useState(false); // Input history collapsed by default
   const [showExitConfirmModal, setShowExitConfirmModal] = useState(false);
   const [showDraftRecoveryModal, setShowDraftRecoveryModal] = useState(false);
   const [pendingNavigationAction, setPendingNavigationAction] = useState<(() => void) | null>(null);
@@ -346,61 +346,94 @@ export default function NoteDetailScreen() {
     }
   }, [hasDraftToRecover, actionsInitialized]);
 
-  // Navigation guard for unsaved changes
-  useEffect(() => {
-    const unsubscribe = navigation.addListener('beforeRemove', (e) => {
-      // Only block if there are unsaved action changes
-      if (!hasUnsavedActionChanges) {
-        return;
-      }
+  // Navigation guard for unsaved changes using usePreventRemove
+  usePreventRemove(hasUnsavedActionChanges, ({ data }) => {
+    // Store the navigation action to execute if user confirms
+    setPendingNavigationAction(() => () => navigation.dispatch(data.action));
+    setShowExitConfirmModal(true);
+  });
 
-      // Prevent default behavior of leaving the screen
-      e.preventDefault();
-
-      // Store the navigation action to execute if user confirms
-      setPendingNavigationAction(() => () => navigation.dispatch(e.data.action));
-      setShowExitConfirmModal(true);
-    });
-
-    return unsubscribe;
-  }, [navigation, hasUnsavedActionChanges]);
-
-  // Format recording duration as MM:SS
-  const formatRecordingTime = (seconds: number) => {
+  // Format duration as MM:SS
+  const formatInputDuration = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // Handle mic button press
-  const handleMicPress = useCallback(() => {
+  // Format timestamp for input history
+  const formatInputTime = useCallback((timestamp: string) => {
+    const date = new Date(timestamp);
+    return date.toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+  }, []);
+
+  // Handle add content button press
+  const handleAddContentPress = useCallback(() => {
     if (!isAuthenticated) {
-      Alert.alert('Sign In Required', 'Please sign in to add audio.');
+      Alert.alert('Sign In Required', 'Please sign in to add content.');
       return;
     }
-    setShowRecordingModal(true);
-    startRecording();
-  }, [isAuthenticated, startRecording]);
+    setShowAddContentModal(true);
+  }, [isAuthenticated]);
 
-  // Handle stop recording and append
-  const handleStopAndAppend = useCallback(async () => {
-    const uri = await stopRecording();
-    if (uri) {
-      const success = await appendAudio(uri);
-      if (success) {
-        Alert.alert('Success', 'Audio has been added to your note.');
-      } else {
-        Alert.alert('Error', 'Failed to add audio. Please try again.');
+  // Handle add content modal submit
+  const handleAddContentSubmit = useCallback(async (options: {
+    textInput?: string;
+    audioUri?: string;
+    resynthesize?: boolean;
+  }): Promise<boolean> => {
+    const success = await addContent(options);
+    if (success) {
+      // Show what decision was made
+      if (lastDecision) {
+        const decisionType = lastDecision.update_type === 'resynthesize' ? 're-synthesized' : 'added to';
+        Alert.alert('Success', `Content has been ${decisionType} your note.`);
       }
     }
-    setShowRecordingModal(false);
-  }, [stopRecording, appendAudio]);
+    return success;
+  }, [addContent, lastDecision]);
 
-  // Handle cancel recording
-  const handleCancelRecording = useCallback(async () => {
-    await cancelRecording();
-    setShowRecordingModal(false);
-  }, [cancelRecording]);
+  // Handle delete input
+  const handleDeleteInput = useCallback((index: number, entry: InputHistoryEntry) => {
+    if (!isAuthenticated) {
+      Alert.alert('Sign In Required', 'Please sign in to delete inputs.');
+      return;
+    }
+
+    const inputType = entry.type === 'audio' ? 'audio recording' : 'text note';
+    const isLastInput = inputHistory.length === 1;
+
+    if (isLastInput) {
+      Alert.alert(
+        'Cannot Delete',
+        'This is the only input. Delete the entire note instead.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
+    Alert.alert(
+      'Delete Input',
+      `Are you sure you want to delete this ${inputType}? The note will be re-synthesized from the remaining inputs.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            const success = await deleteInput(index);
+            if (!success) {
+              Alert.alert('Error', 'Failed to delete input. Please try again.');
+            }
+          },
+        },
+      ]
+    );
+  }, [isAuthenticated, inputHistory.length, deleteInput]);
 
   // Handle exit confirmation modal actions
   const handleConfirmExit = useCallback(() => {
@@ -498,6 +531,33 @@ export default function NoteDetailScreen() {
     // In a real app, this would open share sheet
     console.log('Share note');
   };
+
+  // Handle re-synthesize - regenerate narrative from input history
+  const handleResynthesize = useCallback(async () => {
+    if (!isAuthenticated) {
+      Alert.alert('Sign In Required', 'Please sign in to use AI features.');
+      return;
+    }
+
+    Alert.alert(
+      'Re-synthesize Note',
+      'AI will analyze all your inputs and regenerate a cohesive narrative. Continue?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Re-synthesize',
+          onPress: async () => {
+            const success = await resynthesizeNote();
+            if (success) {
+              Alert.alert('Success', 'Note has been re-synthesized.');
+            } else {
+              Alert.alert('Error', 'Failed to re-synthesize. Please try again.');
+            }
+          },
+        },
+      ]
+    );
+  }, [isAuthenticated, resynthesizeNote]);
 
 
   const handleDelete = () => {
@@ -636,6 +696,73 @@ export default function NoteDetailScreen() {
           />
         </FloatingActionBar>
 
+        {/* Input History Section - Collapsible */}
+        {inputHistory.length > 0 && (
+          <View style={styles.inputHistorySection}>
+            <TouchableOpacity
+              style={styles.inputHistoryHeader}
+              onPress={() => setIsInputsExpanded(!isInputsExpanded)}
+              activeOpacity={0.7}
+            >
+              <View style={styles.inputHistoryHeaderLeft}>
+                <Ionicons name="layers-outline" size={16} color={NotesColors.textSecondary} />
+                <Text style={styles.inputHistoryTitle}>
+                  Inputs ({inputHistory.length})
+                </Text>
+              </View>
+              <Ionicons
+                name={isInputsExpanded ? 'chevron-up' : 'chevron-down'}
+                size={18}
+                color={NotesColors.textSecondary}
+              />
+            </TouchableOpacity>
+
+            {isInputsExpanded && (
+              <View style={styles.inputHistoryList}>
+                {inputHistory.map((entry, index) => (
+                  <View key={index} style={styles.inputHistoryItem}>
+                    <View style={styles.inputHistoryItemLeft}>
+                      <View style={[
+                        styles.inputTypeIcon,
+                        entry.type === 'audio' ? styles.inputTypeIconAudio : styles.inputTypeIconText
+                      ]}>
+                        <Ionicons
+                          name={entry.type === 'audio' ? 'mic' : 'document-text'}
+                          size={12}
+                          color={entry.type === 'audio' ? '#FF3B30' : NotesColors.primary}
+                        />
+                      </View>
+                      <View style={styles.inputHistoryItemInfo}>
+                        <Text style={styles.inputHistoryItemType}>
+                          {entry.type === 'audio'
+                            ? `Audio (${formatInputDuration(entry.duration || 0)})`
+                            : 'Text note'
+                          }
+                        </Text>
+                        <Text style={styles.inputHistoryItemTime}>
+                          {formatInputTime(entry.timestamp)}
+                        </Text>
+                        {entry.type === 'text' && (
+                          <Text style={styles.inputHistoryItemPreview} numberOfLines={1}>
+                            {entry.content.substring(0, 50)}{entry.content.length > 50 ? '...' : ''}
+                          </Text>
+                        )}
+                      </View>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.inputDeleteButton}
+                      onPress={() => handleDeleteInput(index, entry)}
+                      disabled={isAppending}
+                    >
+                      <Ionicons name="trash-outline" size={16} color={NotesColors.textSecondary} />
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </View>
+            )}
+          </View>
+        )}
+
         {/* Transcript - flows naturally below tags/actions */}
         {isEditing ? (
           <TextInput
@@ -664,17 +791,21 @@ export default function NoteDetailScreen() {
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.toolbarButton}
-          onPress={handleMicPress}
+          onPress={handleAddContentPress}
           disabled={isAppending}
         >
           {isAppending ? (
             <ActivityIndicator size="small" color={NotesColors.primary} />
           ) : (
-            <Ionicons name="mic-outline" size={24} color={NotesColors.primary} />
+            <Ionicons name="add-circle-outline" size={24} color={NotesColors.primary} />
           )}
         </TouchableOpacity>
-        <TouchableOpacity style={styles.toolbarButton}>
-          <Ionicons name="camera-outline" size={24} color={NotesColors.textSecondary} />
+        <TouchableOpacity
+          style={styles.toolbarButton}
+          onPress={handleResynthesize}
+          disabled={isAppending}
+        >
+          <Ionicons name="sparkles-outline" size={24} color={NotesColors.primary} />
         </TouchableOpacity>
         <TouchableOpacity style={styles.toolbarButton}>
           <Ionicons name="share-outline" size={24} color={NotesColors.textSecondary} />
@@ -692,71 +823,15 @@ export default function NoteDetailScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Recording Modal */}
-      <Modal
-        visible={showRecordingModal}
-        transparent
-        animationType="fade"
-        onRequestClose={handleCancelRecording}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.recordingModal}>
-            <Text style={styles.recordingModalTitle}>Add to Note</Text>
-
-            {isAppending ? (
-              <View style={styles.processingContainer}>
-                <ActivityIndicator size="large" color={NotesColors.primary} />
-                <Text style={styles.processingText}>{appendStatus || 'Processing...'}</Text>
-                <View style={styles.progressBar}>
-                  <View style={[styles.progressFill, { width: `${appendProgress}%` }]} />
-                </View>
-              </View>
-            ) : (
-              <>
-                <Text style={styles.recordingTime}>{formatRecordingTime(recordingDuration)}</Text>
-
-                {/* Simple waveform visualization */}
-                <View style={styles.waveformContainer}>
-                  {[...Array(15)].map((_, i) => (
-                    <View
-                      key={i}
-                      style={[
-                        styles.waveformBar,
-                        {
-                          height: isRecording
-                            ? 10 + Math.random() * 30
-                            : 10,
-                        },
-                      ]}
-                    />
-                  ))}
-                </View>
-
-                <View style={styles.recordingButtons}>
-                  <TouchableOpacity
-                    style={styles.cancelButton}
-                    onPress={handleCancelRecording}
-                  >
-                    <Text style={styles.cancelButtonText}>Cancel</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={styles.stopButton}
-                    onPress={handleStopAndAppend}
-                  >
-                    <View style={styles.stopButtonInner} />
-                    <Text style={styles.stopButtonText}>Stop</Text>
-                  </TouchableOpacity>
-                </View>
-              </>
-            )}
-
-            {recordingError && (
-              <Text style={styles.recordingErrorText}>{recordingError}</Text>
-            )}
-          </View>
-        </View>
-      </Modal>
+      {/* Add Content Modal */}
+      <AddContentModal
+        visible={showAddContentModal}
+        onClose={() => setShowAddContentModal(false)}
+        onSubmit={handleAddContentSubmit}
+        isProcessing={isAppending}
+        processingStatus={appendStatus}
+        processingProgress={appendProgress}
+      />
 
       {/* Exit Confirmation Modal */}
       <Modal
@@ -940,6 +1015,85 @@ const styles = StyleSheet.create({
     color: NotesColors.textPrimary,
     marginTop: 8,
     minHeight: 100,
+  },
+  // Input History styles
+  inputHistorySection: {
+    backgroundColor: NotesColors.card,
+    borderRadius: 12,
+    marginBottom: 16,
+    overflow: 'hidden',
+  },
+  inputHistoryHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  inputHistoryHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  inputHistoryTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: NotesColors.textSecondary,
+  },
+  inputHistoryList: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  inputHistoryItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(255, 255, 255, 0.05)',
+  },
+  inputHistoryItemLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    gap: 10,
+  },
+  inputTypeIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  inputTypeIconAudio: {
+    backgroundColor: 'rgba(255, 59, 48, 0.15)',
+  },
+  inputTypeIconText: {
+    backgroundColor: 'rgba(98, 69, 135, 0.2)',
+  },
+  inputHistoryItemInfo: {
+    flex: 1,
+  },
+  inputHistoryItemType: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: NotesColors.textPrimary,
+  },
+  inputHistoryItemTime: {
+    fontSize: 12,
+    color: NotesColors.textSecondary,
+    marginTop: 1,
+  },
+  inputHistoryItemPreview: {
+    fontSize: 12,
+    color: NotesColors.textSecondary,
+    marginTop: 2,
+    fontStyle: 'italic',
+  },
+  inputDeleteButton: {
+    padding: 8,
+    marginLeft: 8,
   },
   toolbar: {
     flexDirection: 'row',

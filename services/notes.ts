@@ -41,6 +41,17 @@ export interface NoteDetailResponse {
   is_pinned: boolean;
   is_archived: boolean;
   ai_processed: boolean;
+  ai_metadata?: {
+    input_history?: Array<{
+      type: 'text' | 'audio';
+      content: string;
+      timestamp: string;
+      duration?: number;
+      audio_key?: string;
+    }>;
+    synthesized_at?: string;
+    [key: string]: any;
+  };
   actions: ActionResponse[];
   created_at: string;
   updated_at: string;
