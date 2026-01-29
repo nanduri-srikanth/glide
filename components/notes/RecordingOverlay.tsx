@@ -17,12 +17,13 @@ interface RecordingOverlayProps {
   isRecording: boolean;
   isPaused: boolean;
   duration: number;
+  recordingUri?: string | null; // URI of saved recording (when stopped but not processed)
   onStartRecording: () => void;
-  onStopRecording: (notes?: string) => void;
+  onStopRecording: () => Promise<string | null>; // Just stop, returns URI
   onPauseRecording: () => void;
   onResumeRecording: () => void;
   onCancel: () => void;
-  onSubmitTextOnly?: (notes: string) => void;
+  onProcess: (notes: string, audioUri?: string | null) => void; // Process with AI
 }
 
 // Animated wave bar component
@@ -90,16 +91,67 @@ export function RecordingOverlay({
   isRecording,
   isPaused,
   duration,
+  recordingUri,
   onStartRecording,
   onStopRecording,
   onPauseRecording,
   onResumeRecording,
   onCancel,
-  onSubmitTextOnly,
+  onProcess,
 }: RecordingOverlayProps) {
   const [notes, setNotes] = useState('');
+  const [savedAudioUri, setSavedAudioUri] = useState<string | null>(null);
+  const [isInputFocused, setIsInputFocused] = useState(false);
   const textInputRef = useRef<TextInput>(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  // Animation for mic moving to corner
+  const micScale = useRef(new Animated.Value(1)).current;
+  const micOpacity = useRef(new Animated.Value(1)).current;
+
+  // Determine if mic should be in corner (user is typing)
+  const isTyping = notes.length > 0 || isInputFocused;
+  const showMicInCorner = isTyping && !isRecording;
+
+  // Track saved recording URI
+  React.useEffect(() => {
+    if (recordingUri) {
+      setSavedAudioUri(recordingUri);
+    }
+  }, [recordingUri]);
+
+  // Animate mic when typing state changes
+  useEffect(() => {
+    if (showMicInCorner) {
+      Animated.parallel([
+        Animated.spring(micScale, {
+          toValue: 0.55,
+          useNativeDriver: true,
+          tension: 50,
+          friction: 8,
+        }),
+        Animated.timing(micOpacity, {
+          toValue: 0.9,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    } else {
+      Animated.parallel([
+        Animated.spring(micScale, {
+          toValue: 1,
+          useNativeDriver: true,
+          tension: 50,
+          friction: 8,
+        }),
+        Animated.timing(micOpacity, {
+          toValue: 1,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+  }, [showMicInCorner]);
 
   // Pulse animation for recording indicator
   useEffect(() => {
@@ -131,31 +183,33 @@ export function RecordingOverlay({
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const handleMicPress = () => {
+  const handleMicPress = async () => {
     if (isRecording) {
       if (isPaused) {
         onResumeRecording();
       } else {
-        onStopRecording(notes);
+        // Just stop recording, don't process yet
+        const uri = await onStopRecording();
+        if (uri) {
+          setSavedAudioUri(uri);
+        }
       }
     } else {
+      // Start new recording (clear previous if any)
+      setSavedAudioUri(null);
       onStartRecording();
     }
   };
 
-  const handleSubmit = () => {
+  const handleProcess = () => {
     Keyboard.dismiss();
-    if (duration > 0) {
-      // Has recording
-      onStopRecording(notes);
-    } else if (notes.trim()) {
-      // Text only
-      onSubmitTextOnly?.(notes);
-    }
+    // Process with AI - pass notes and audio URI if available
+    onProcess(notes, savedAudioUri || recordingUri);
   };
 
-  const canSubmit = notes.trim().length > 0 || duration > 0;
-  const hasRecording = duration > 0;
+  const canProcess = notes.trim().length > 0 || savedAudioUri || recordingUri || duration > 0;
+  const hasRecording = duration > 0 || !!savedAudioUri || !!recordingUri;
+  const hasStoppedRecording = !!savedAudioUri || !!recordingUri;
 
   return (
     <KeyboardAvoidingView
@@ -170,11 +224,23 @@ export function RecordingOverlay({
         </TouchableOpacity>
         <Text style={styles.title}>New Note</Text>
         <View style={styles.headerRight}>
-          {hasRecording && (
+          {hasRecording && !showMicInCorner && (
             <View style={styles.recordingBadge}>
               <View style={styles.recordingDot} />
               <Text style={styles.recordingBadgeText}>Audio</Text>
             </View>
+          )}
+          {/* Mic in corner when typing */}
+          {showMicInCorner && (
+            <Animated.View style={{ transform: [{ scale: micScale }], opacity: micOpacity }}>
+              <TouchableOpacity
+                style={styles.micButtonSmall}
+                onPress={handleMicPress}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="mic" size={30} color="#FFFFFF" />
+              </TouchableOpacity>
+            </Animated.View>
           )}
         </View>
       </View>
@@ -188,20 +254,22 @@ export function RecordingOverlay({
           placeholderTextColor={NotesColors.textSecondary}
           value={notes}
           onChangeText={setNotes}
+          onFocus={() => setIsInputFocused(true)}
+          onBlur={() => setIsInputFocused(false)}
           multiline
           textAlignVertical="top"
-          autoFocus
+          autoFocus={false}
         />
       </View>
 
-      {/* Bottom bar with mic and submit */}
-      <View style={styles.bottomBar}>
-        {/* Recording controls */}
-        <View style={styles.recordingSection}>
-          {isRecording && !isPaused ? (
-            // Recording in progress - show wave and stop button
+      {/* Bottom controls - centered and stacked */}
+      <View style={styles.bottomControls}>
+        {/* Mic / Recording control - centered (hidden when typing, mic moves to corner) */}
+        {isRecording && !isPaused ? (
+          // Recording in progress - always show wave and stop button at bottom
+          <View style={styles.micContainer}>
             <TouchableOpacity
-              style={styles.recordingControl}
+              style={styles.recordingActiveContainer}
               onPress={handleMicPress}
               activeOpacity={0.7}
             >
@@ -218,10 +286,12 @@ export function RecordingOverlay({
                 <View style={styles.stopIcon} />
               </View>
             </TouchableOpacity>
-          ) : isRecording && isPaused ? (
-            // Paused - show paused state
+          </View>
+        ) : isRecording && isPaused ? (
+          // Paused - show paused state
+          <View style={styles.micContainer}>
             <TouchableOpacity
-              style={styles.recordingControl}
+              style={styles.recordingActiveContainer}
               onPress={handleMicPress}
               activeOpacity={0.7}
             >
@@ -231,55 +301,67 @@ export function RecordingOverlay({
               <Text style={styles.timerTextPaused}>{formatTime(duration)}</Text>
               <Ionicons name="play" size={18} color={NotesColors.primary} />
             </TouchableOpacity>
-          ) : hasRecording ? (
-            // Has recording but stopped
-            <View style={styles.recordingControl}>
+          </View>
+        ) : hasStoppedRecording ? (
+          // Has recording that was stopped - show completed state
+          <View style={styles.micContainer}>
+            <View style={styles.recordingActiveContainer}>
               <View style={styles.completedIndicator}>
                 <Ionicons name="checkmark" size={14} color="#4CAF50" />
               </View>
               <Text style={styles.timerTextComplete}>{formatTime(duration)}</Text>
-              <TouchableOpacity onPress={onStartRecording}>
+              <TouchableOpacity onPress={() => { setSavedAudioUri(null); onStartRecording(); }}>
                 <Ionicons name="refresh" size={18} color={NotesColors.textSecondary} />
               </TouchableOpacity>
             </View>
-          ) : (
-            // No recording yet - show mic button
+          </View>
+        ) : !showMicInCorner ? (
+          // No recording yet and not typing - show big mic button
+          <View style={styles.micContainer}>
             <TouchableOpacity
               style={styles.micButton}
               onPress={handleMicPress}
               activeOpacity={0.7}
             >
-              <Ionicons name="mic" size={22} color={NotesColors.textPrimary} />
+              <Ionicons name="mic" size={36} color="#FFFFFF" />
             </TouchableOpacity>
-          )}
-        </View>
+          </View>
+        ) : null}
 
-        {/* Submit button */}
-        <TouchableOpacity
-          style={[styles.submitButton, !canSubmit && styles.submitButtonDisabled]}
-          onPress={handleSubmit}
-          disabled={!canSubmit}
-          activeOpacity={0.7}
-        >
-          <Ionicons
-            name="arrow-up"
-            size={22}
-            color={canSubmit ? NotesColors.textPrimary : NotesColors.textSecondary}
-          />
-        </TouchableOpacity>
-      </View>
+        {/* Process button - show when there's content */}
+        {canProcess && (
+          <TouchableOpacity
+            style={[styles.processButton, isRecording && styles.processButtonDisabled]}
+            onPress={handleProcess}
+            disabled={isRecording}
+            activeOpacity={0.7}
+          >
+            <Ionicons
+              name="sparkles"
+              size={16}
+              color={!isRecording ? '#FFFFFF' : NotesColors.textSecondary}
+            />
+            <Text style={[
+              styles.processButtonText,
+              isRecording && styles.processButtonTextDisabled
+            ]}>
+              Process
+            </Text>
+          </TouchableOpacity>
+        )}
 
-      {/* Helper text */}
-      <View style={styles.helperContainer}>
-        <Text style={styles.helperText}>
-          {isRecording && !isPaused
-            ? 'Tap waveform to stop recording'
-            : isRecording && isPaused
-            ? 'Tap to resume'
-            : hasRecording
-            ? 'Recording attached'
-            : 'Tap mic to record audio'}
-        </Text>
+        {/* Helper text - only show when not typing */}
+        {!showMicInCorner && (
+          <Text style={styles.helperText}>
+            {isRecording && !isPaused
+              ? 'Tap to stop recording'
+              : isRecording && isPaused
+              ? 'Tap to resume'
+              : hasStoppedRecording
+              ? 'Audio attached'
+              : 'Tap mic to record'}
+          </Text>
+        )}
       </View>
     </KeyboardAvoidingView>
   );
@@ -342,27 +424,25 @@ const styles = StyleSheet.create({
     color: NotesColors.textPrimary,
     lineHeight: 26,
   },
-  bottomBar: {
-    flexDirection: 'row',
+  bottomControls: {
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: NotesColors.card,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    paddingBottom: 40,
+    gap: 12,
   },
-  recordingSection: {
-    flex: 1,
+  micContainer: {
+    alignItems: 'center',
   },
-  recordingControl: {
+  recordingActiveContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
   },
   recordingIndicator: {
     backgroundColor: 'rgba(255, 59, 48, 0.12)',
-    borderRadius: 20,
-    padding: 8,
+    borderRadius: 24,
+    padding: 10,
   },
   miniWaveContainer: {
     flexDirection: 'row',
@@ -420,25 +500,44 @@ const styles = StyleSheet.create({
   },
   micButton: {
     backgroundColor: NotesColors.primary,
-    borderRadius: 20,
-    padding: 10,
+    borderRadius: 40,
+    width: 80,
+    height: 80,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  submitButton: {
+  micButtonSmall: {
     backgroundColor: NotesColors.primary,
-    borderRadius: 20,
-    padding: 10,
+    borderRadius: 30,
+    width: 60,
+    height: 60,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  submitButtonDisabled: {
+  processButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: NotesColors.primary,
+    borderRadius: 18,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    gap: 5,
+  },
+  processButtonDisabled: {
     backgroundColor: NotesColors.card,
   },
-  helperContainer: {
-    paddingHorizontal: 20,
-    paddingBottom: 34,
-    paddingTop: 4,
+  processButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  processButtonTextDisabled: {
+    color: NotesColors.textSecondary,
   },
   helperText: {
     fontSize: 12,
     color: NotesColors.textSecondary,
     textAlign: 'center',
+    marginTop: 4,
   },
 });

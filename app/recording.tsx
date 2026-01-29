@@ -109,46 +109,67 @@ export default function RecordingScreen() {
     await resumeRecording();
   };
 
-  const handleStopRecording = async (notes?: string) => {
-    if (notes) setUserNotes(notes);
-
+  // Just stop recording, don't process yet
+  const handleStopRecording = async (): Promise<string | null> => {
     const uri = await stopRecording();
 
     if (!uri) {
       Alert.alert('Error', 'Failed to save recording');
-      return;
+      return null;
     }
+
+    // Save the URI for later processing
+    setPendingAudioUri(uri);
+    return uri;
+  };
+
+  // Process with AI - called when user taps Process button
+  const handleProcess = async (notes: string, audioUri?: string | null) => {
+    setUserNotes(notes);
+    const finalAudioUri = audioUri || pendingAudioUri;
 
     if (!isAuthenticated) {
       Alert.alert(
-        'Recording Saved',
-        `Your ${formatDuration(duration)} recording has been saved. Sign in to sync and process with AI.`,
+        'Sign In Required',
+        'Please sign in to process notes with AI.',
         [{ text: 'OK', onPress: () => router.back() }]
       );
       return;
     }
 
-    // If coming from a specific folder, process directly
+    // If coming from a specific folder, process directly with synthesis
     if (folderId) {
       setShowProcessing(true);
-      const result = await processRecording(folderId, notes || userNotes);
 
-      if (result) {
+      const { data, error: apiError } = await voiceService.synthesizeNote(
+        {
+          textInput: notes || undefined,
+          audioUri: finalAudioUri || undefined,
+          folderId: folderId,
+        },
+        (progress, status) => {
+          // Update processing status if needed
+        }
+      );
+
+      if (data) {
         // Success - show animation and go back
         fetchFolders();
         showSuccessAndNavigateBack('Note saved');
       } else {
         // Error occurred
         setShowProcessing(false);
-        Alert.alert('Processing Failed', error || 'Unknown error', [
+        Alert.alert('Processing Failed', apiError || 'Unknown error', [
           { text: 'Try Again' },
           { text: 'Discard', style: 'destructive', onPress: () => router.back() },
         ]);
       }
     } else {
       // Show folder selection sheet
-      setPendingAudioUri(uri);
-      setPendingNotes(notes || userNotes || '');
+      setPendingNotes(notes || '');
+      if (finalAudioUri) {
+        setPendingAudioUri(finalAudioUri);
+      }
       setShowFolderSheet(true);
     }
   };
@@ -207,104 +228,35 @@ export default function RecordingScreen() {
 
   const processNoteWithFolder = async (selectedFolderId?: string, autoSort: boolean = false) => {
     setSheetProcessing(true);
-    setSheetProcessingStatus(autoSort ? 'AI is sorting your note...' : 'Processing...');
+    setSheetProcessingStatus(autoSort ? 'AI is analyzing your note...' : 'Processing...');
 
     try {
-      if (pendingAudioUri) {
-        const { data, error: apiError } = await voiceService.processVoiceMemo(
-          pendingAudioUri,
-          autoSort ? undefined : selectedFolderId,
-          (progress, status) => setSheetProcessingStatus(status),
-          pendingNotes
-        );
+      // Use the new synthesis endpoint for both audio+text and text-only
+      const { data, error: apiError } = await voiceService.synthesizeNote(
+        {
+          textInput: pendingNotes || undefined,
+          audioUri: pendingAudioUri || undefined,
+          folderId: autoSort ? undefined : selectedFolderId,
+        },
+        (progress, status) => setSheetProcessingStatus(status)
+      );
 
-        if (apiError) {
-          Alert.alert('Error', apiError);
-          setSheetProcessing(false);
-          return;
-        }
-
-        // Success - show animation and go back
-        fetchFolders();
-        showSuccessAndNavigateBack('Note saved');
-      } else if (pendingNotes.trim()) {
-        const firstLine = pendingNotes.split('\n')[0].trim();
-        const title = firstLine.length > 50 ? firstLine.slice(0, 50) + '...' : firstLine;
-
-        const { data, error: apiError } = await notesService.createNote({
-          title: title || 'New Note',
-          transcript: pendingNotes,
-          folder_id: autoSort ? undefined : selectedFolderId,
-        });
-
-        if (apiError) {
-          Alert.alert('Error', apiError);
-          setSheetProcessing(false);
-          return;
-        }
-
-        // Success - show animation and go back
-        fetchFolders();
-        showSuccessAndNavigateBack('Note saved');
+      if (apiError) {
+        Alert.alert('Error', apiError);
+        setSheetProcessing(false);
+        return;
       }
+
+      // Success - show animation and go back
+      fetchFolders();
+      showSuccessAndNavigateBack('Note saved');
     } catch (err) {
       Alert.alert('Error', 'Failed to process note.');
       setSheetProcessing(false);
     }
   };
 
-  const handleSubmitTextOnly = async (notes: string) => {
-    if (!notes.trim()) {
-      Alert.alert('Error', 'Please enter some text for your note.');
-      return;
-    }
-
-    if (!isAuthenticated) {
-      Alert.alert(
-        'Sign In Required',
-        'Please sign in to create notes.',
-        [{ text: 'OK', onPress: () => router.back() }]
-      );
-      return;
-    }
-
-    // If coming from a specific folder, process directly
-    if (folderId) {
-      setShowProcessing(true);
-
-      try {
-        const firstLine = notes.split('\n')[0].trim();
-        const title = firstLine.length > 50 ? firstLine.slice(0, 50) + '...' : firstLine;
-
-        const { data, error: apiError } = await notesService.createNote({
-          title: title || 'New Note',
-          transcript: notes,
-          folder_id: folderId,
-        });
-
-        if (apiError) {
-          setShowProcessing(false);
-          Alert.alert('Error', apiError, [
-            { text: 'Try Again' },
-            { text: 'Discard', style: 'destructive', onPress: () => router.back() },
-          ]);
-          return;
-        }
-
-        // Success - show animation and go back
-        fetchFolders();
-        showSuccessAndNavigateBack('Note saved');
-      } catch (err) {
-        setShowProcessing(false);
-        Alert.alert('Error', 'Failed to create note. Please try again.');
-      }
-    } else {
-      // Show folder selection sheet
-      setPendingAudioUri(null);
-      setPendingNotes(notes);
-      setShowFolderSheet(true);
-    }
-  };
+  // Note: handleSubmitTextOnly is no longer needed - handleProcess handles both text-only and audio+text
 
   const handleCancel = () => {
     if (isRecording) {
@@ -415,12 +367,13 @@ export default function RecordingScreen() {
         isRecording={isRecording}
         isPaused={isPaused}
         duration={duration}
+        recordingUri={pendingAudioUri}
         onStartRecording={handleStartRecording}
         onStopRecording={handleStopRecording}
         onPauseRecording={handlePauseRecording}
         onResumeRecording={handleResumeRecording}
         onCancel={handleCancel}
-        onSubmitTextOnly={handleSubmitTextOnly}
+        onProcess={handleProcess}
       />
       <FolderSelectionSheet
         visible={showFolderSheet}

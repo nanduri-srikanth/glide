@@ -3,9 +3,13 @@
  */
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { authService, User } from '@/services/auth';
 import { notesService } from '@/services/notes';
 import api from '@/services/api';
+
+// Navigation persistence key (must match useNavigationPersistence)
+const NAVIGATION_STATE_KEY = 'glide_last_route';
 
 // DEV MODE: Auto-login with test credentials
 // Set DEV_AUTO_LOGIN to true and provide test user credentials
@@ -36,39 +40,57 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const checkAuth = async () => {
     try {
+      // Ensure tokens are loaded from SecureStore before checking auth
+      await api.ensureTokensLoaded();
+
       if (api.isAuthenticated()) {
-        const { user: userData } = await authService.getCurrentUser();
+        console.log('[AUTH] Found existing token, fetching user...');
+        const { user: userData, error: userError } = await authService.getCurrentUser();
         if (userData) {
           setUser(userData);
+          console.log('[AUTH] Restored session for:', userData.email);
           // Ensure default folders exist
           try {
             await notesService.setupDefaultFolders();
           } catch (e) {
             // Ignore - folders may already exist
           }
+        } else {
+          console.log('[AUTH] Token exists but failed to get user:', userError);
+          // Token might be expired/invalid - clear it
+          await api.clearTokens();
         }
       } else if (DEV_AUTO_LOGIN) {
         // DEV MODE: Auto-login with test credentials
-        console.log('[DEV] Auto-logging in with test credentials...');
+        console.log('[DEV] No existing tokens, auto-logging in with test credentials...');
+        console.log('[DEV] Attempting login for:', DEV_TEST_EMAIL);
+
         const result = await authService.login({
           email: DEV_TEST_EMAIL,
           password: DEV_TEST_PASSWORD
         });
+
+        console.log('[DEV] Login result:', result.success ? 'SUCCESS' : 'FAILED');
+
         if (result.success) {
-          const { user: userData } = await authService.getCurrentUser();
+          const { user: userData, error: userError } = await authService.getCurrentUser();
           if (userData) {
             setUser(userData);
-            console.log('[DEV] Auto-login successful:', userData.email);
+            console.log('[DEV] Auto-login successful, user:', userData.email);
             try {
               await notesService.setupDefaultFolders();
             } catch (e) {
               // Ignore - folders may already exist
             }
+          } else {
+            console.log('[DEV] Failed to get user after login:', userError);
           }
         } else {
           console.log('[DEV] Auto-login failed:', result.error);
           console.log('[DEV] Make sure test user exists: email=' + DEV_TEST_EMAIL);
         }
+      } else {
+        console.log('[AUTH] No tokens and DEV_AUTO_LOGIN is disabled');
       }
     } catch (error) {
       console.error('Auth check failed:', error);
@@ -103,6 +125,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = async () => {
+    // Clear saved navigation state to prevent restoring authenticated routes
+    try {
+      await AsyncStorage.removeItem(NAVIGATION_STATE_KEY);
+    } catch (error) {
+      console.warn('Failed to clear navigation state on logout:', error);
+    }
     await authService.logout();
     setUser(null);
   };

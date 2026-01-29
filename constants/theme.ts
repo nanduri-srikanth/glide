@@ -8,18 +8,18 @@ import { Platform } from 'react-native';
 const tintColorLight = '#0a7ea4';
 const tintColorDark = '#fff';
 
-// Notes App Purple Color Scheme
+// Notes App Purple Color Scheme - Light Mode
 export const NotesColors = {
   primary: '#624587',      // Folder icons, selected states, primary buttons
   secondary: '#834587',    // Action badges, highlights, active elements
   accent: '#87456A',       // Links, CTAs, "View Draft →"
-  background: '#1F1F1F',   // Dark background
-  card: '#2A2A2A',         // Card backgrounds
-  textPrimary: '#FFFFFF',  // White text
-  textSecondary: '#B0B0B0', // Gray text
+  background: '#FAF6F1',   // Sandy ivory background
+  card: '#F0EBE3',         // Card backgrounds (warm ivory)
+  textPrimary: '#1A1A1A',  // Dark text
+  textSecondary: '#666666', // Gray text
   // Derived colors for AI Summary Panel
-  aiPanelBackground: 'rgba(98, 69, 135, 0.12)',
-  aiPanelBorder: 'rgba(98, 69, 135, 0.4)',
+  aiPanelBackground: 'rgba(98, 69, 135, 0.08)',
+  aiPanelBorder: 'rgba(98, 69, 135, 0.3)',
   // Action badge colors
   calendarBadge: '#624587',
   emailBadge: '#834587',
@@ -29,7 +29,7 @@ export const NotesColors = {
 export const Colors = {
   light: {
     text: '#11181C',
-    background: '#fff',
+    background: '#FAF6F1',
     tint: tintColorLight,
     icon: '#687076',
     tabIconDefault: '#687076',

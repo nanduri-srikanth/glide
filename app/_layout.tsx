@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
-import { DarkTheme, ThemeProvider } from '@react-navigation/native';
+import { DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
@@ -8,6 +8,7 @@ import 'react-native-reanimated';
 import { NotesColors } from '@/constants/theme';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { NotesProvider } from '@/context/NotesContext';
+import { useNavigationPersistence } from '@/hooks/useNavigationPersistence';
 
 // DEV MODE: Set to true to skip authentication for testing
 const DEV_SKIP_AUTH = true;
@@ -16,15 +17,15 @@ export const unstable_settings = {
   anchor: '(tabs)',
 };
 
-const PurpleDarkTheme = {
-  ...DarkTheme,
+const PurpleLightTheme = {
+  ...DefaultTheme,
   colors: {
-    ...DarkTheme.colors,
+    ...DefaultTheme.colors,
     primary: NotesColors.primary,
     background: NotesColors.background,
     card: NotesColors.card,
     text: NotesColors.textPrimary,
-    border: NotesColors.card,
+    border: '#E0E0E0',
     notification: NotesColors.secondary,
   },
 };
@@ -34,8 +35,11 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   const segments = useSegments();
   const router = useRouter();
 
+  // Persist and restore navigation state (only when auth is ready)
+  useNavigationPersistence(!isLoading);
+
   useEffect(() => {
-    // Skip auth redirect in dev mode
+    // Skip auth redirect in dev mode (but still wait for loading)
     if (DEV_SKIP_AUTH) return;
 
     if (isLoading) return;
@@ -51,8 +55,9 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     }
   }, [isAuthenticated, isLoading, segments]);
 
-  // Skip loading screen in dev mode
-  if (!DEV_SKIP_AUTH && isLoading) {
+  // Always show loading screen while auth is being checked
+  // This ensures auto-login completes before showing the app
+  if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={NotesColors.primary} />
@@ -65,7 +70,7 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
 
 function RootLayoutNav() {
   return (
-    <ThemeProvider value={PurpleDarkTheme}>
+    <ThemeProvider value={PurpleLightTheme}>
       <AuthGuard>
         <Stack
           screenOptions={{
@@ -81,7 +86,7 @@ function RootLayoutNav() {
           <Stack.Screen name="auth" options={{ headerShown: false }} />
         </Stack>
       </AuthGuard>
-      <StatusBar style="light" />
+      <StatusBar style="dark" />
     </ThemeProvider>
   );
 }

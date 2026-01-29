@@ -110,22 +110,6 @@ export function SwipeableFolderCard({
 
   const cardContent = (
     <View style={styles.cardInner}>
-      {/* Expand/collapse chevron for folders with children */}
-      {hasChildren ? (
-        <TouchableOpacity
-          onPress={onToggleExpanded}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          style={styles.expandButton}
-        >
-          <Ionicons
-            name={isExpanded ? 'chevron-down' : 'chevron-forward'}
-            size={18}
-            color={NotesColors.textSecondary}
-          />
-        </TouchableOpacity>
-      ) : (
-        <View style={styles.expandPlaceholder} />
-      )}
       <View style={styles.iconContainer}>
         <Ionicons
           name={getIconName(folder.icon)}
@@ -137,8 +121,21 @@ export function SwipeableFolderCard({
         <Text style={styles.name}>{folder.name}</Text>
       </View>
       <View style={styles.rightContainer}>
+        {hasChildren && (
+          <TouchableOpacity
+            onPress={onToggleExpanded}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            style={styles.expandButton}
+          >
+            <Ionicons
+              name={isExpanded ? 'chevron-down' : 'chevron-forward'}
+              size={18}
+              color={NotesColors.textSecondary}
+            />
+          </TouchableOpacity>
+        )}
         <Text style={styles.count}>{folder.noteCount}</Text>
-        {!isEditMode && (
+        {!isEditMode && !hasChildren && (
           <Ionicons name="chevron-forward" size={20} color={NotesColors.textSecondary} />
         )}
       </View>
@@ -232,12 +229,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   expandButton: {
-    width: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  expandPlaceholder: {
-    width: 24,
+    padding: 4,
+    marginRight: 4,
   },
   iconContainer: {
     width: 36,

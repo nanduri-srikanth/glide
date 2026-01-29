@@ -7,7 +7,6 @@ import {
   CalendarAction,
   EmailAction,
   ReminderAction,
-  NextStepAction,
   EditableAction,
 } from '@/data/types';
 
@@ -15,10 +14,9 @@ interface EditableActionsPanelProps {
   calendarActions: CalendarAction[];
   emailActions: EmailAction[];
   reminderActions: ReminderAction[];
-  nextStepActions: NextStepAction[];
   onUpdateAction: (action: EditableAction) => void;
   onDeleteAction: (actionId: string) => void;
-  onAddAction: (type: 'calendar' | 'email' | 'reminder' | 'nextStep') => void;
+  onAddAction: (type: 'calendar' | 'email' | 'reminder') => void;
   onExecuteAction?: (actionId: string, service: 'google' | 'apple') => void;
 }
 
@@ -26,7 +24,6 @@ export function EditableActionsPanel({
   calendarActions,
   emailActions,
   reminderActions,
-  nextStepActions,
   onUpdateAction,
   onDeleteAction,
   onAddAction,
@@ -35,7 +32,6 @@ export function EditableActionsPanel({
   const hasCalendar = calendarActions.length > 0;
   const hasEmail = emailActions.length > 0;
   const hasReminder = reminderActions.length > 0;
-  const hasNextSteps = nextStepActions.length > 0;
 
   return (
     <View style={styles.container}>
@@ -99,25 +95,6 @@ export function EditableActionsPanel({
         </View>
       )}
 
-      {/* Next Steps */}
-      {hasNextSteps && (
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Ionicons name="play-forward" size={14} color={NotesColors.primary} />
-            <Text style={styles.sectionTitle}>Next Steps</Text>
-          </View>
-          {nextStepActions.filter(a => !a.isDeleted).map((action) => (
-            <EditableActionCard
-              key={action.id}
-              action={action}
-              type="nextStep"
-              onUpdate={onUpdateAction}
-              onDelete={onDeleteAction}
-            />
-          ))}
-        </View>
-      )}
-
       {/* Add Action Button */}
       <View style={styles.addActionContainer}>
         <Text style={styles.addActionLabel}>Add Action:</Text>
@@ -127,25 +104,21 @@ export function EditableActionsPanel({
             onPress={() => onAddAction('calendar')}
           >
             <Ionicons name="calendar-outline" size={16} color={NotesColors.calendarBadge} />
+            <Text style={[styles.addButtonText, { color: NotesColors.calendarBadge }]}>Event</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.addButton}
             onPress={() => onAddAction('email')}
           >
             <Ionicons name="mail-outline" size={16} color={NotesColors.emailBadge} />
+            <Text style={[styles.addButtonText, { color: NotesColors.emailBadge }]}>Email</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.addButton}
             onPress={() => onAddAction('reminder')}
           >
             <Ionicons name="alarm-outline" size={16} color={NotesColors.reminderBadge} />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.addButton}
-            onPress={() => onAddAction('nextStep')}
-          >
-            <Ionicons name="add" size={16} color={NotesColors.primary} />
-            <Text style={styles.addButtonText}>Step</Text>
+            <Text style={[styles.addButtonText, { color: NotesColors.reminderBadge }]}>Reminder</Text>
           </TouchableOpacity>
         </View>
       </View>

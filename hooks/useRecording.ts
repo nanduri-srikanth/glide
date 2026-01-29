@@ -4,7 +4,7 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { Audio } from 'expo-av';
-import { voiceService, VoiceProcessingResponse } from '@/services/voice';
+import { voiceService, VoiceProcessingResponse, SynthesisResponse } from '@/services/voice';
 
 interface RecordingState {
   isRecording: boolean;
@@ -145,6 +145,51 @@ export function useRecording() {
     }
   }, [state.uri]);
 
+  /**
+   * Synthesize a note from the current recording and/or text input.
+   * Uses the new synthesis endpoint that merges text + audio into a cohesive narrative.
+   */
+  const synthesizeNote = useCallback(async (
+    textInput?: string,
+    folderId?: string
+  ): Promise<SynthesisResponse | null> => {
+    // At least one of recording or text must be provided
+    if (!state.uri && !textInput?.trim()) {
+      setError('Please provide text or record audio');
+      return null;
+    }
+
+    setIsProcessing(true);
+    setError(null);
+
+    try {
+      const { data, error: apiError } = await voiceService.synthesizeNote(
+        {
+          textInput: textInput?.trim() || undefined,
+          audioUri: state.uri || undefined,
+          folderId,
+        },
+        (progress, status) => {
+          setProcessingProgress(progress);
+          setProcessingStatus(status);
+        }
+      );
+
+      if (apiError) {
+        setError(apiError);
+        return null;
+      }
+      return data || null;
+    } catch (err) {
+      setError('Failed to synthesize note');
+      return null;
+    } finally {
+      setIsProcessing(false);
+      setProcessingProgress(0);
+      setProcessingStatus('');
+    }
+  }, [state.uri]);
+
   const resetState = useCallback(() => {
     cleanup();
     setState({ isRecording: false, isPaused: false, duration: 0, uri: null });
@@ -167,6 +212,7 @@ export function useRecording() {
     resumeRecording,
     cancelRecording,
     processRecording,
+    synthesizeNote,
     resetState,
   };
 }

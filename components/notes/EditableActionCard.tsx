@@ -69,40 +69,113 @@ export function EditableActionCard({
     })
   ).current;
 
-  const getIcon = (): { name: keyof typeof Ionicons.glyphMap; color: string } => {
-    switch (type) {
-      case 'calendar':
-        return { name: 'calendar', color: NotesColors.calendarBadge };
-      case 'email':
-        return { name: 'mail', color: NotesColors.emailBadge };
-      case 'reminder':
-        return { name: 'alarm', color: NotesColors.reminderBadge };
-      case 'nextStep':
-        return { name: 'play-forward', color: NotesColors.primary };
-    }
-  };
-
-  const icon = getIcon();
-
   const handleFieldChange = (field: string, value: string) => {
     onUpdate({ ...action, [field]: value, isModified: true });
   };
 
-  const renderCalendarContent = () => {
+  const getPriorityColor = (priority: string, isActive: boolean) => {
+    const opacity = isActive ? 0.4 : 0.15;
+    switch (priority) {
+      case 'high':
+        return `rgba(239, 83, 80, ${opacity})`;
+      case 'medium':
+        return `rgba(255, 167, 38, ${opacity})`;
+      default:
+        return `rgba(102, 187, 106, ${opacity})`;
+    }
+  };
+
+  // Get the title text for the action
+  const getTitle = (): string => {
+    switch (type) {
+      case 'calendar':
+        return (action as CalendarAction).title;
+      case 'email':
+        return (action as EmailAction).subject || (action as EmailAction).to;
+      case 'reminder':
+        return (action as ReminderAction).title;
+      case 'nextStep':
+        return (action as NextStepAction).title;
+      default:
+        return '';
+    }
+  };
+
+  // Get the title field name for updates
+  const getTitleField = (): string => {
+    switch (type) {
+      case 'email':
+        return 'subject';
+      default:
+        return 'title';
+    }
+  };
+
+  // Render title in header (for all types except nextStep which has checkbox)
+  const renderHeaderTitle = () => {
+    const title = getTitle();
+    const titleField = getTitleField();
+    const nextStepAction = type === 'nextStep' ? action as NextStepAction : null;
+
+    if (type === 'nextStep') {
+      return (
+        <View style={styles.nextStepHeaderRow}>
+          <TouchableOpacity
+            style={styles.checkbox}
+            onPress={() => handleFieldChange('status', nextStepAction?.status === 'completed' ? 'pending' : 'completed')}
+          >
+            <Ionicons
+              name={nextStepAction?.status === 'completed' ? 'checkbox' : 'square-outline'}
+              size={18}
+              color={nextStepAction?.status === 'completed' ? NotesColors.primary : NotesColors.textSecondary}
+            />
+          </TouchableOpacity>
+          {isEditing ? (
+            <TextInput
+              style={[styles.headerTitle, styles.headerTitleEditable, styles.headerTitleInput]}
+              value={title}
+              onChangeText={(text) => handleFieldChange(titleField, text)}
+              placeholder="Next step..."
+              placeholderTextColor={NotesColors.textSecondary}
+            />
+          ) : (
+            <Text style={[
+              styles.headerTitle,
+              nextStepAction?.status === 'completed' && styles.completedText,
+            ]} numberOfLines={0}>
+              {title}
+            </Text>
+          )}
+        </View>
+      );
+    }
+
+    // For other action types
+    if (isEditing) {
+      return (
+        <TextInput
+          style={[styles.headerTitle, styles.headerTitleEditable, styles.headerTitleInput]}
+          value={title}
+          onChangeText={(text) => handleFieldChange(titleField, text)}
+          placeholder={type === 'email' ? 'Subject line' : 'Title'}
+          placeholderTextColor={NotesColors.textSecondary}
+          multiline
+        />
+      );
+    }
+
+    return (
+      <Text style={styles.headerTitle} numberOfLines={0}>
+        {title}
+      </Text>
+    );
+  };
+
+  // Render details (everything except the title)
+  const renderCalendarDetails = () => {
     const calAction = action as CalendarAction;
     return (
       <>
-        {isEditing ? (
-          <TextInput
-            style={styles.editableTitle}
-            value={calAction.title}
-            onChangeText={(text) => handleFieldChange('title', text)}
-            placeholder="Event title"
-            placeholderTextColor={NotesColors.textSecondary}
-          />
-        ) : (
-          <Text style={styles.actionTitle}>{calAction.title}</Text>
-        )}
         <View style={styles.detailRow}>
           <Ionicons name="calendar-outline" size={12} color={NotesColors.textSecondary} />
           {isEditing ? (
@@ -155,7 +228,7 @@ export function EditableActionCard({
     );
   };
 
-  const renderEmailContent = () => {
+  const renderEmailDetails = () => {
     const emailAction = action as EmailAction;
     return (
       <>
@@ -170,20 +243,9 @@ export function EditableActionCard({
               placeholderTextColor={NotesColors.textSecondary}
             />
           ) : (
-            <Text style={styles.actionTitle}>{emailAction.to}</Text>
+            <Text style={styles.detailText}>{emailAction.to}</Text>
           )}
         </View>
-        {isEditing ? (
-          <TextInput
-            style={styles.editableTitle}
-            value={emailAction.subject}
-            onChangeText={(text) => handleFieldChange('subject', text)}
-            placeholder="Subject line"
-            placeholderTextColor={NotesColors.textSecondary}
-          />
-        ) : (
-          <Text style={styles.detailText} numberOfLines={1}>{emailAction.subject}</Text>
-        )}
         {emailAction.preview && !isEditing && (
           <Text style={styles.previewText} numberOfLines={2}>{emailAction.preview}</Text>
         )}
@@ -201,21 +263,10 @@ export function EditableActionCard({
     );
   };
 
-  const renderReminderContent = () => {
+  const renderReminderDetails = () => {
     const reminderAction = action as ReminderAction;
     return (
       <>
-        {isEditing ? (
-          <TextInput
-            style={styles.editableTitle}
-            value={reminderAction.title}
-            onChangeText={(text) => handleFieldChange('title', text)}
-            placeholder="Reminder title"
-            placeholderTextColor={NotesColors.textSecondary}
-          />
-        ) : (
-          <Text style={styles.actionTitle}>{reminderAction.title}</Text>
-        )}
         <View style={styles.detailRow}>
           <Ionicons name="time-outline" size={12} color={NotesColors.textSecondary} />
           {isEditing ? (
@@ -255,64 +306,20 @@ export function EditableActionCard({
     );
   };
 
-  const renderNextStepContent = () => {
-    const nextStepAction = action as NextStepAction;
-    return (
-      <View style={styles.nextStepRow}>
-        <TouchableOpacity
-          style={styles.checkbox}
-          onPress={() => handleFieldChange('status', nextStepAction.status === 'completed' ? 'pending' : 'completed')}
-        >
-          <Ionicons
-            name={nextStepAction.status === 'completed' ? 'checkbox' : 'square-outline'}
-            size={20}
-            color={nextStepAction.status === 'completed' ? NotesColors.primary : NotesColors.textSecondary}
-          />
-        </TouchableOpacity>
-        {isEditing ? (
-          <TextInput
-            style={[styles.editableTitle, styles.nextStepInput]}
-            value={nextStepAction.title}
-            onChangeText={(text) => handleFieldChange('title', text)}
-            placeholder="Next step..."
-            placeholderTextColor={NotesColors.textSecondary}
-          />
-        ) : (
-          <Text style={[
-            styles.actionTitle,
-            nextStepAction.status === 'completed' && styles.completedText,
-          ]}>
-            {nextStepAction.title}
-          </Text>
-        )}
-      </View>
-    );
-  };
-
-  const renderContent = () => {
+  const renderDetails = () => {
     switch (type) {
       case 'calendar':
-        return renderCalendarContent();
+        return renderCalendarDetails();
       case 'email':
-        return renderEmailContent();
+        return renderEmailDetails();
       case 'reminder':
-        return renderReminderContent();
+        return renderReminderDetails();
       case 'nextStep':
-        return renderNextStepContent();
+        return null; // Next steps have no additional details
     }
   };
 
-  const getPriorityColor = (priority: string, isActive: boolean) => {
-    const opacity = isActive ? 0.4 : 0.15;
-    switch (priority) {
-      case 'high':
-        return `rgba(239, 83, 80, ${opacity})`;
-      case 'medium':
-        return `rgba(255, 167, 38, ${opacity})`;
-      default:
-        return `rgba(102, 187, 106, ${opacity})`;
-    }
-  };
+  const hasDetails = type !== 'nextStep';
 
   return (
     <View style={styles.container}>
@@ -327,15 +334,15 @@ export function EditableActionCard({
         {...panResponder.panHandlers}
       >
         <View style={styles.cardHeader}>
-          <View style={[styles.iconContainer, { backgroundColor: `${icon.color}20` }]}>
-            <Ionicons name={icon.name} size={14} color={icon.color} />
-          </View>
-
           {action.source === 'user' && (
             <View style={styles.userBadge}>
               <Text style={styles.userBadgeText}>USER</Text>
             </View>
           )}
+
+          <View style={styles.titleContainer}>
+            {renderHeaderTitle()}
+          </View>
 
           <View style={styles.cardActions}>
             <TouchableOpacity
@@ -357,9 +364,11 @@ export function EditableActionCard({
           </View>
         </View>
 
-        <View style={styles.cardContent}>
-          {renderContent()}
-        </View>
+        {hasDetails && (
+          <View style={styles.cardContent}>
+            {renderDetails()}
+          </View>
+        )}
       </Animated.View>
     </View>
   );
@@ -385,28 +394,51 @@ const styles = StyleSheet.create({
     backgroundColor: NotesColors.card,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderColor: 'rgba(0, 0, 0, 0.08)',
   },
   cardHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingTop: 10,
-    paddingBottom: 6,
+    alignItems: 'flex-start',
+    paddingLeft: 12,
+    paddingRight: 8,
+    paddingVertical: 10,
   },
-  iconContainer: {
-    width: 28,
-    height: 28,
-    borderRadius: 6,
-    justifyContent: 'center',
-    alignItems: 'center',
+  titleContainer: {
+    flex: 1,
+    marginRight: 12,
+    paddingRight: 4,
+  },
+  headerTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: NotesColors.textPrimary,
+    lineHeight: 20,
+  },
+  headerTitleEditable: {
+    borderBottomWidth: 1,
+    borderBottomColor: NotesColors.primary,
+  },
+  headerTitleInput: {
+    padding: 0,
+    margin: 0,
+    flex: 1,
+  },
+  nextStepHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  checkbox: {
+    padding: 2,
+    marginTop: -2,
   },
   userBadge: {
-    marginLeft: 8,
     backgroundColor: 'rgba(98, 69, 135, 0.3)',
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
+    marginRight: 8,
+    alignSelf: 'center',
   },
   userBadgeText: {
     fontSize: 9,
@@ -416,8 +448,9 @@ const styles = StyleSheet.create({
   },
   cardActions: {
     flexDirection: 'row',
-    marginLeft: 'auto',
-    gap: 8,
+    gap: 6,
+    alignSelf: 'flex-start',
+    flexShrink: 0,
   },
   editButton: {
     padding: 4,
@@ -428,21 +461,7 @@ const styles = StyleSheet.create({
   cardContent: {
     paddingHorizontal: 12,
     paddingBottom: 12,
-  },
-  actionTitle: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: NotesColors.textPrimary,
-    marginBottom: 4,
-  },
-  editableTitle: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: NotesColors.textPrimary,
-    marginBottom: 4,
-    padding: 0,
-    borderBottomWidth: 1,
-    borderBottomColor: NotesColors.primary,
+    paddingTop: 0,
   },
   detailRow: {
     flexDirection: 'row',
@@ -509,7 +528,7 @@ const styles = StyleSheet.create({
   },
   priorityChipActive: {
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
+    borderColor: 'rgba(0, 0, 0, 0.15)',
   },
   priorityText: {
     fontSize: 10,
@@ -518,17 +537,6 @@ const styles = StyleSheet.create({
   },
   priorityTextActive: {
     color: NotesColors.textPrimary,
-  },
-  nextStepRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  checkbox: {
-    padding: 2,
-  },
-  nextStepInput: {
-    flex: 1,
   },
   completedText: {
     textDecorationLine: 'line-through',

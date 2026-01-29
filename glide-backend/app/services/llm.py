@@ -55,7 +55,35 @@ Transcript:
 
 {context_str}
 
-PATTERN RECOGNITION - Look for these specific patterns:
+## SUMMARY INSTRUCTIONS
+You are summarizing a voice memo transcript for the user who recorded it. The input may be rambling, non-linear, or stream-of-consciousness—this is expected.
+
+### Tone Calibration
+Before summarizing, assess the transcript:
+- **Formality**: casual/conversational ↔ professional/precise
+- **Emotional register**: venting/processing ↔ analytical/neutral
+- **Technical density**: everyday language ↔ domain-specific jargon
+- **Energy**: reflective/uncertain ↔ decisive/energized
+
+Mirror these qualities. If they're frustrated, don't sanitize. If analytical with specific terminology, match that precision. The summary should feel like *their* thinking, clarified.
+
+### What to Capture
+1. **Core topics/ideas** — what was this memo actually about?
+2. **Key details and context** — preserve specifics (names, numbers, reasoning) that matter
+3. **Decisions, conclusions, or realizations** — anything that crystallized
+4. **Unresolved threads** — half-formed thoughts or open questions
+
+### Handling Ambiguity
+If something is unclear, flag it inline: *[unclear: sounded like "call Mike" but uncertain who]*
+
+### Length Scaling
+- Quick thought (< 1 min): 2-4 sentences
+- Medium memo (1-5 min): 1-2 paragraphs
+- Long ramble (5+ min): structured summary with natural paragraph breaks
+
+Write in natural prose mirroring how the user thinks. Use structure only when genuinely needed. Do NOT use bullet points unless the user was explicitly listing things.
+
+## PATTERN RECOGNITION - Look for these specific patterns:
 
 CALENDAR EVENTS - Create when you detect:
 - Meetings: "meeting with", "call with", "sync with", "catch up with"
@@ -79,7 +107,7 @@ Extract and return ONLY valid JSON (no markdown, no explanation) with this exact
   "title": "Brief descriptive title for this note (5-10 words max)",
   "folder": "Work|Personal|Ideas|Meetings|Projects",
   "tags": ["relevant", "tags", "max5"],
-  "summary": "2-3 sentence summary of the key points",
+  "summary": "Summary following the instructions above - match user's tone and style",
   "calendar": [
     {{
       "title": "Event name",
@@ -444,14 +472,45 @@ Your job is to merge these into ONE coherent narrative that flows naturally.
 
 {context_str}
 
-IMPORTANT INSTRUCTIONS:
+## NARRATIVE & SUMMARY INSTRUCTIONS
+You are summarizing a voice memo for the user who recorded it. The input may be rambling, non-linear, or stream-of-consciousness—this is expected.
+
+### Tone Calibration
+Before writing, assess the input:
+- **Formality**: casual/conversational ↔ professional/precise
+- **Emotional register**: venting/processing ↔ analytical/neutral
+- **Technical density**: everyday language ↔ domain-specific jargon
+- **Energy**: reflective/uncertain ↔ decisive/energized
+
+Mirror these qualities in BOTH the narrative and summary. If they're swearing and frustrated, don't sanitize. If analytical with specific terminology, match that precision. It should feel like *their* thinking, clarified—not translated into someone else's voice.
+
+### What to Capture
+1. **Core topics/ideas** — what was this memo actually about?
+2. **Key details and context** — preserve specifics (names, numbers, reasoning) that matter
+3. **Decisions, conclusions, or realizations** — anything that crystallized
+4. **Unresolved threads** — half-formed thoughts or open questions
+
+### Handling Ambiguity
+If something is unclear, flag it inline: *[unclear: sounded like "call Mike" but uncertain who]*
+
+### Length Scaling for Summary
+- Quick thought (< 1 min): 2-4 sentences
+- Medium memo (1-5 min): 1-2 paragraphs
+- Long ramble (5+ min): structured summary with paragraph breaks, potentially with a 1-2 sentence "gist" up top
+
+### Format
+- Write in natural prose mirroring how the user thinks
+- Use structure only when genuinely needed for clarity
+- Do NOT use bullet points unless the user was explicitly listing things
+- Do NOT extract action items in the summary (handled separately)
+
+## NARRATIVE RULES
 1. Create a single, cohesive narrative that integrates both inputs naturally
 2. Do NOT separate "typed" vs "spoken" - merge them into one flowing text
-3. Fix grammar, remove filler words, but preserve the user's voice and intent
+3. Fix grammar, remove filler words, but PRESERVE the user's voice and intent
 4. If there are contradictions, prefer the more recent/specific information
-5. Extract actionable items (Calendar, Email, Reminders only)
 
-PATTERN RECOGNITION - Look for these specific patterns:
+## PATTERN RECOGNITION - Look for these specific patterns:
 
 CALENDAR EVENTS - Create when you detect:
 - Meetings: "meeting with", "call with", "sync with", "catch up with"
@@ -473,11 +532,11 @@ REMINDERS - Create when you detect:
 
 Return ONLY valid JSON (no markdown, no explanation) with this exact structure:
 {{
-  "narrative": "The synthesized, cohesive narrative combining all inputs",
+  "narrative": "The synthesized, cohesive narrative combining all inputs - preserve user's voice",
   "title": "Brief descriptive title for this note (5-10 words max)",
   "folder": "Work|Personal|Ideas|Meetings|Projects",
   "tags": ["relevant", "tags", "max5"],
-  "summary": "2-3 sentence summary of the key points",
+  "summary": "Summary following instructions above - match user's tone and length to content",
   "calendar": [
     {{
       "title": "Event name",
@@ -850,12 +909,13 @@ IMPORTANT:
                 }
             }
 
-    async def summarize_note(self, transcript: str) -> str:
+    async def summarize_note(self, transcript: str, duration_seconds: int = 0) -> str:
         """
         Generate a concise summary of a note.
 
         Args:
             transcript: The full transcript
+            duration_seconds: Optional duration of the recording for length scaling
 
         Returns:
             Summary string
@@ -864,15 +924,55 @@ IMPORTANT:
         if not self.client:
             return transcript[:200] + ("..." if len(transcript) > 200 else "")
 
-        prompt = f"""Summarize this voice memo in 2-3 sentences, focusing on key points and action items:
+        # Determine expected length based on duration
+        if duration_seconds < 60:
+            length_guidance = "Keep it to 2-4 sentences."
+        elif duration_seconds < 300:
+            length_guidance = "Use 1-2 paragraphs."
+        else:
+            length_guidance = "Use structured paragraphs with a 1-2 sentence gist up top if helpful."
 
+        prompt = f"""You are summarizing a voice memo transcript for the user who recorded it. The input may be rambling, non-linear, or stream-of-consciousness—this is expected.
+
+TRANSCRIPT:
 {transcript}
 
-Return only the summary text, no formatting."""
+## Tone Calibration
+Before summarizing, assess the transcript:
+- **Formality**: casual/conversational ↔ professional/precise
+- **Emotional register**: venting/processing ↔ analytical/neutral
+- **Technical density**: everyday language ↔ domain-specific jargon
+- **Energy**: reflective/uncertain ↔ decisive/energized
+
+Mirror these qualities in your summary. If they're swearing and frustrated, don't sanitize it. If they're in analytical mode with specific terminology, match that precision. The summary should feel like *their* thinking, clarified—not translated into someone else's voice.
+
+## What to Capture
+1. **Core topics/ideas** — what was this memo actually about?
+2. **Key details and context** — preserve specifics (names, numbers, reasoning, concerns) that matter for future reference
+3. **Decisions, conclusions, or realizations** — anything that crystallized during the memo
+4. **Unresolved threads** — half-formed thoughts or open questions they raised
+
+## Handling Ambiguity
+If something is unclear—garbled audio, incomplete thought, ambiguous reference—flag it inline:
+*[unclear: sounded like "call Mike" but uncertain who Mike refers to]*
+*[incomplete thought: started comparing two options but trailed off]*
+
+Don't guess silently. Surface uncertainty so the user can clarify later.
+
+## Length
+{length_guidance}
+
+## Format
+- Write in natural prose that mirrors how the user thinks
+- Use structure (paragraph breaks, occasional headers) only when genuinely needed for clarity
+- Do NOT use bullet points unless the user was explicitly listing things
+- Do NOT extract action items (handled separately)
+
+Return only the summary text, no JSON or additional formatting."""
 
         response = self.client.chat.completions.create(
             model=self.MODEL,
-            max_tokens=200,
+            max_tokens=500,
             messages=[{"role": "user", "content": prompt}]
         )
 
