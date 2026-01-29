@@ -113,8 +113,7 @@ export function AddContentModal({
     duration,
     startRecording,
     stopRecording,
-    cancelRecording,
-    recordingUri,
+    resetState,
   } = useRecording();
 
   const [localRecordingUri, setLocalRecordingUri] = useState<string | null>(null);
@@ -125,7 +124,7 @@ export function AddContentModal({
       setTextInput('');
       setForceResynthesize(false);
       setLocalRecordingUri(null);
-      cancelRecording();
+      resetState();
     }
   }, [visible]);
 
@@ -148,7 +147,7 @@ export function AddContentModal({
   };
 
   const handleClearRecording = async () => {
-    await cancelRecording();
+    resetState();
     setLocalRecordingUri(null);
   };
 
@@ -232,7 +231,6 @@ export function AddContentModal({
                     multiline
                     textAlignVertical="top"
                     autoFocus
-                    editable={!isRecording}
                   />
                 </View>
 
@@ -241,11 +239,6 @@ export function AddContentModal({
 
                 {/* Audio section */}
                 <View style={styles.audioSection}>
-                  <Text style={styles.sectionLabel}>
-                    <Ionicons name="mic-outline" size={14} color={NotesColors.textSecondary} />
-                    {' '}Record Audio
-                  </Text>
-
                   {isRecording ? (
                     /* Recording in progress */
                     <View style={styles.recordingActive}>
@@ -433,11 +426,6 @@ const styles = StyleSheet.create({
   },
   audioSection: {
     paddingHorizontal: 16,
-  },
-  sectionLabel: {
-    fontSize: 13,
-    color: NotesColors.textSecondary,
-    marginBottom: 12,
   },
   recordingActive: {
     flexDirection: 'row',
