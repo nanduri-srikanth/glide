@@ -412,6 +412,8 @@ export default function NoteDetailScreen() {
   }): Promise<boolean> => {
     const success = await addContent(options);
     if (success) {
+      // Reset dirty tracking since content was saved to server
+      discardActionChanges();
       // Show what decision was made
       if (lastDecision) {
         const decisionType = lastDecision.update_type === 'resynthesize' ? 're-synthesized' : 'added to';
@@ -419,7 +421,7 @@ export default function NoteDetailScreen() {
       }
     }
     return success;
-  }, [addContent, lastDecision]);
+  }, [addContent, lastDecision, discardActionChanges]);
 
   // Handle delete input
   const handleDeleteInput = useCallback((index: number, entry: InputHistoryEntry) => {
