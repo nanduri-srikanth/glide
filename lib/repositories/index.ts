@@ -1,0 +1,8 @@
+export { notesRepository } from './NotesRepository';
+export { foldersRepository } from './FoldersRepository';
+export { actionsRepository } from './ActionsRepository';
+export { metadataRepository } from './MetadataRepository';
+
+export type { LocalNoteListItem, LocalNoteDetail, CreateNoteInput, UpdateNoteInput } from './NotesRepository';
+export type { LocalFolderResponse, CreateFolderInput, UpdateFolderInput } from './FoldersRepository';
+export type { LocalActionResponse, CreateActionInput, UpdateActionInput } from './ActionsRepository';

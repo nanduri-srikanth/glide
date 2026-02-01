@@ -50,7 +50,8 @@
       ],
       "expo-secure-store",
       "expo-apple-authentication",
-      "expo-live-activity"
+      "expo-live-activity",
+      "expo-sqlite"
     ],
     "experiments": {
       "typedRoutes": true,
