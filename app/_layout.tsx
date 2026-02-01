@@ -9,6 +9,8 @@ import 'react-native-reanimated';
 import { NotesColors } from '@/constants/theme';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import { NotesProvider } from '@/context/NotesContext';
+import { NetworkProvider } from '@/context/NetworkContext';
+import { SyncProvider } from '@/context/SyncContext';
 import { useNavigationPersistence } from '@/hooks/useNavigationPersistence';
 
 // Deep link URL parsing
@@ -169,11 +171,15 @@ function RootLayoutNav() {
 
 export default function RootLayout() {
   return (
-    <AuthProvider>
-      <NotesProvider>
-        <RootLayoutNav />
-      </NotesProvider>
-    </AuthProvider>
+    <NetworkProvider>
+      <SyncProvider>
+        <AuthProvider>
+          <NotesProvider>
+            <RootLayoutNav />
+          </NotesProvider>
+        </AuthProvider>
+      </SyncProvider>
+    </NetworkProvider>
   );
 }
 
