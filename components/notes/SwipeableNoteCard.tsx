@@ -108,6 +108,47 @@ export function SwipeableNoteCard({
     }
   }, [handleDelete, note.id, onMove, onPin]);
 
+  const handlePin = useCallback(() => {
+    swipeableRef.current?.close();
+    onPin?.(note.id);
+  }, [note.id, onPin]);
+
+  const renderLeftActions = useCallback((
+    progress: Animated.AnimatedInterpolation<number>,
+    dragX: Animated.AnimatedInterpolation<number>
+  ) => {
+    if (!onPin) return null;
+
+    const scale = dragX.interpolate({
+      inputRange: [0, ACTION_WIDTH],
+      outputRange: [0.8, 1],
+      extrapolate: 'clamp',
+    });
+
+    const opacity = dragX.interpolate({
+      inputRange: [0, ACTION_WIDTH / 2, ACTION_WIDTH],
+      outputRange: [0, 0.5, 1],
+      extrapolate: 'clamp',
+    });
+
+    return (
+      <Animated.View style={[styles.pinActionContainer, { opacity }]}>
+        <Animated.View style={{ transform: [{ scale }] }}>
+          <TouchableOpacity style={styles.pinButton} onPress={handlePin}>
+            <Ionicons
+              name={note.isPinned ? "pin-outline" : "pin"}
+              size={22}
+              color="#fff"
+            />
+            <Text style={styles.actionText}>
+              {note.isPinned ? 'Unpin' : 'Pin'}
+            </Text>
+          </TouchableOpacity>
+        </Animated.View>
+      </Animated.View>
+    );
+  }, [handlePin, note.isPinned, onPin]);
+
   const renderRightActions = useCallback((
     progress: Animated.AnimatedInterpolation<number>,
     dragX: Animated.AnimatedInterpolation<number>
@@ -193,8 +234,11 @@ export function SwipeableNoteCard({
     <>
       <Swipeable
         ref={swipeableRef}
+        renderLeftActions={onPin ? renderLeftActions : undefined}
         renderRightActions={renderRightActions}
+        leftThreshold={ACTION_WIDTH}
         rightThreshold={ACTION_WIDTH}
+        overshootLeft={false}
         overshootRight={false}
         friction={2}
         enableTrackpadTwoFingerGesture
@@ -256,6 +300,20 @@ export function SwipeableNoteCard({
 }
 
 const styles = StyleSheet.create({
+  pinActionContainer: {
+    justifyContent: 'center',
+    alignItems: 'flex-end',
+    marginBottom: 10,
+    paddingRight: 8,
+  },
+  pinButton: {
+    backgroundColor: '#FF9500',
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: ACTION_WIDTH,
+    height: '100%',
+    borderRadius: 12,
+  },
   actionsContainer: {
     flexDirection: 'row',
     alignItems: 'center',

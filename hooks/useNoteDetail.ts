@@ -1,24 +1,21 @@
 /**
- * useNoteDetail Hook - Offline-first with local DB
+ * useNoteDetail Hook
+ *
+ * Fetches and manages a single note using TanStack Query for SWR caching.
  */
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { useNoteDetailQuery, useUpdateNoteMutation, useDeleteNoteMutation, queryKeys } from '@/hooks/queries';
 import { notesService, NoteDetailResponse } from '@/services/notes';
 import { actionsService, ActionExecuteResponse } from '@/services/actions';
-import { voiceService, VoiceProcessingResponse, SynthesisResponse, InputHistoryEntry, UpdateDecision } from '@/services/voice';
+import { voiceService, InputHistoryEntry, UpdateDecision } from '@/services/voice';
 import { Note } from '@/data/types';
 import { useNotes } from '@/context/NotesContext';
-import { notesRepository, localNoteToNote } from '@/services/repositories/NotesRepository';
-import { useSync } from '@/context/SyncContext';
-import { useNetwork } from '@/context/NetworkContext';
 
 export function useNoteDetail(noteId: string | undefined) {
+  const queryClient = useQueryClient();
   const { getCachedNote, clearCachedNote } = useNotes();
-  const { isInitialized, isHydrated } = useSync();
-  const { isOnline } = useNetwork();
-  const [rawNote, setRawNote] = useState<NoteDetailResponse | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
   // Append audio state
   const [isAppending, setIsAppending] = useState(false);
@@ -26,179 +23,56 @@ export function useNoteDetail(noteId: string | undefined) {
   const [appendStatus, setAppendStatus] = useState('');
   const [lastDecision, setLastDecision] = useState<UpdateDecision | null>(null);
 
-  // Helper to store note in local DB
-  const storeNoteLocally = useCallback(async (data: NoteDetailResponse) => {
-    try {
-      await notesRepository.upsertFromServer({
-        id: data.id,
-        title: data.title,
-        transcript: data.transcript,
-        summary: data.summary || undefined,
-        duration: data.duration || undefined,
-        folderId: data.folder_id || undefined,
-        tags: data.tags,
-        createdAt: data.created_at,
-        updatedAt: data.updated_at || data.created_at,
-      });
-      console.log('[useNoteDetail] Stored note in local DB:', data.id);
-    } catch (err) {
-      console.error('[useNoteDetail] Failed to store note locally:', err);
-    }
-  }, []);
+  // Use TanStack Query for note fetching
+  const {
+    data: rawNote,
+    isLoading,
+    error: queryError,
+    refetch,
+  } = useNoteDetailQuery(noteId);
 
-  const fetchNote = useCallback(async () => {
-    if (!noteId) {
-      setIsLoading(false);
-      return;
-    }
+  // Check cache first for instant display (for newly created notes)
+  const cachedNote = noteId ? getCachedNote(noteId) : null;
+  const displayNote = cachedNote || rawNote || null;
 
-    // Check cache first for instant display
-    const cached = getCachedNote(noteId);
-    if (cached) {
-      setRawNote(cached);
-      setIsLoading(false);
-      // Still fetch from API in background to get full data (e.g., actions)
-      if (isOnline) {
-        const { data } = await notesService.getNote(noteId);
-        if (data) {
-          setRawNote(data);
-          clearCachedNote(noteId);
-          // Write-through: store in local DB
-          await storeNoteLocally(data);
-        }
-      }
-      return;
-    }
+  // Clear cache once we have fresh data from API
+  if (rawNote && cachedNote && noteId) {
+    clearCachedNote(noteId);
+  }
 
-    setIsLoading(true);
-    setError(null);
+  const error = queryError ? (queryError as Error).message : null;
 
-    // Try local DB first if initialized
-    if (isInitialized) {
-      const localNote = await notesRepository.getNoteById(noteId);
-      if (localNote) {
-        // Convert local note to NoteDetailResponse format
-        const localNoteDetail: NoteDetailResponse = {
-          id: localNote.serverId || localNote.id,
-          title: localNote.title,
-          transcript: localNote.transcript || '',
-          summary: localNote.summary || null,
-          duration: localNote.duration ?? null,
-          folder_id: localNote.folderId || null,
-          folder_name: '',
-          tags: localNote.tags,
-          is_pinned: localNote.isPinned,
-          is_archived: localNote.isArchived,
-          ai_processed: true,
-          audio_url: localNote.audioUrl || null,
-          actions: [],
-          ai_metadata: undefined,
-          created_at: localNote.createdAt,
-          updated_at: localNote.updatedAt,
-        };
-        setRawNote(localNoteDetail);
-        setIsLoading(false);
-
-        // If online, fetch from server in background for complete data (actions, etc.)
-        if (isOnline) {
-          const { data } = await notesService.getNote(noteId);
-          if (data) {
-            setRawNote(data);
-            // Write-through: update local DB with full server data
-            await storeNoteLocally(data);
-          }
-        }
-        return;
-      }
-    }
-
-    // Fetch from server if not found locally (or not initialized)
-    if (isOnline) {
-      const { data, error: apiError } = await notesService.getNote(noteId);
-      if (apiError) setError(apiError);
-      else if (data) {
-        setRawNote(data);
-        // Write-through: store in local DB
-        await storeNoteLocally(data);
-      }
-    } else {
-      setError('Note not available offline');
-    }
-
-    setIsLoading(false);
-  }, [noteId, getCachedNote, clearCachedNote, isInitialized, isOnline, storeNoteLocally]);
-
-  useEffect(() => {
-    fetchNote();
-  }, [fetchNote]);
+  // Mutations
+  const updateNoteMutation = useUpdateNoteMutation();
+  const deleteNoteMutation = useDeleteNoteMutation();
 
   const refresh = useCallback(async () => {
-    await fetchNote();
-  }, [fetchNote]);
+    await refetch();
+  }, [refetch]);
 
   const updateNote = useCallback(async (data: { title?: string; transcript?: string; tags?: string[] }): Promise<boolean> => {
     if (!noteId) return false;
-
-    // Update local DB first
-    if (isInitialized) {
-      await notesRepository.updateNote(noteId, {
-        title: data.title,
-        transcript: data.transcript,
-        tags: data.tags,
-      });
-      console.log('[useNoteDetail] Updated note in local DB:', noteId);
+    try {
+      await updateNoteMutation.mutateAsync({ noteId, data });
+      return true;
+    } catch {
+      return false;
     }
-
-    // If online, sync to server
-    if (isOnline) {
-      const { data: updated, error: apiError } = await notesService.updateNote(noteId, data);
-      if (apiError) {
-        console.warn('[useNoteDetail] Server update failed, will sync later:', apiError);
-        // Don't set error - local update succeeded
-      } else if (updated) {
-        setRawNote(updated);
-        // Write-through: update local DB with server response
-        await storeNoteLocally(updated);
-      }
-    } else {
-      // Offline - update UI state from local data
-      setRawNote(prev => prev ? {
-        ...prev,
-        title: data.title ?? prev.title,
-        transcript: data.transcript ?? prev.transcript,
-        tags: data.tags ?? prev.tags,
-      } : null);
-    }
-
-    return true;
-  }, [noteId, isInitialized, isOnline, storeNoteLocally]);
+  }, [noteId, updateNoteMutation]);
 
   const deleteNote = useCallback(async (): Promise<boolean> => {
     if (!noteId) return false;
-
-    // Delete locally first
-    if (isInitialized) {
-      await notesRepository.deleteNote(noteId);
-      console.log('[useNoteDetail] Deleted note locally:', noteId);
+    try {
+      await deleteNoteMutation.mutateAsync({ noteId });
+      return true;
+    } catch {
+      return false;
     }
-
-    // If online, sync to server
-    if (isOnline) {
-      const { success, error: apiError } = await notesService.deleteNote(noteId);
-      if (apiError) {
-        console.warn('[useNoteDetail] Server delete failed, will sync later:', apiError);
-        // Don't set error - local delete succeeded
-      }
-      return success;
-    }
-
-    return true;
-  }, [noteId, isInitialized, isOnline]);
+  }, [noteId, deleteNoteMutation]);
 
   const executeAction = useCallback(async (actionId: string, service: 'google' | 'apple'): Promise<ActionExecuteResponse | null> => {
     const { data, error: apiError } = await actionsService.executeAction(actionId, service);
     if (apiError) {
-      setError(apiError);
       return null;
     }
     await refresh();
@@ -208,7 +82,6 @@ export function useNoteDetail(noteId: string | undefined) {
   const completeAction = useCallback(async (actionId: string): Promise<boolean> => {
     const { data, error: apiError } = await actionsService.completeAction(actionId);
     if (apiError) {
-      setError(apiError);
       return false;
     }
     await refresh();
@@ -236,7 +109,6 @@ export function useNoteDetail(noteId: string | undefined) {
     setAppendStatus('');
 
     if (apiError) {
-      setError(apiError);
       return false;
     }
 
@@ -279,7 +151,6 @@ export function useNoteDetail(noteId: string | undefined) {
     setAppendStatus('');
 
     if (apiError) {
-      setError(apiError);
       return false;
     }
 
@@ -318,7 +189,6 @@ export function useNoteDetail(noteId: string | undefined) {
     setAppendStatus('');
 
     if (apiError) {
-      setError(apiError);
       return false;
     }
 
@@ -351,7 +221,6 @@ export function useNoteDetail(noteId: string | undefined) {
     setAppendStatus('');
 
     if (apiError) {
-      setError(apiError);
       return false;
     }
 
@@ -360,11 +229,11 @@ export function useNoteDetail(noteId: string | undefined) {
     return true;
   }, [noteId, refresh]);
 
-  const note: Note | null = rawNote ? notesService.convertToNote(rawNote) : null;
+  const note: Note | null = displayNote ? notesService.convertToNote(displayNote) : null;
 
   // Parse input history from AI metadata
   const inputHistory = useMemo((): InputHistoryEntry[] => {
-    const history = rawNote?.ai_metadata?.input_history;
+    const history = displayNote?.ai_metadata?.input_history;
     if (!history || !Array.isArray(history)) return [];
     return history.map((entry: any) => ({
       type: entry.type as 'text' | 'audio',
@@ -373,11 +242,11 @@ export function useNoteDetail(noteId: string | undefined) {
       duration: entry.duration,
       audio_key: entry.audio_key,
     }));
-  }, [rawNote?.ai_metadata?.input_history]);
+  }, [displayNote?.ai_metadata?.input_history]);
 
   return {
     note,
-    rawNote,
+    rawNote: displayNote,
     isLoading,
     error,
     refresh,

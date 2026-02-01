@@ -103,9 +103,10 @@ export function FormattingToolbar({
 
   const handleMicPress = async () => {
     if (isRecording) {
-      const uri = await stopRecording();
-      if (uri) {
-        onRecordingComplete(uri, duration);
+      const result = await stopRecording();
+      if (result) {
+        // Prefer localPath (permanent storage) over uri (temp)
+        onRecordingComplete(result.localPath || result.uri, duration);
       }
     } else {
       await startRecording();

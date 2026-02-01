@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useLocalSearchParams, useRouter, Stack, useFocusEffect } from 'expo-router';
+import { useQueryClient } from '@tanstack/react-query';
 import { NotesColors } from '@/constants/theme';
 import { mockFolders } from '@/data/mockFolders';
 import { getNotesByFolder } from '@/data/mockNotes';
@@ -22,7 +23,8 @@ import { UnifiedSearchOverlay } from '@/components/notes/UnifiedSearchOverlay';
 import { Note } from '@/data/types';
 import { useNotes } from '@/context/NotesContext';
 import { useAuth } from '@/context/AuthContext';
-import { notesService } from '@/services/notes';
+import { notesService, NoteListItem } from '@/services/notes';
+import { useUpdateNoteMutation, queryKeys } from '@/hooks/queries';
 
 interface Section {
   title: string;
@@ -34,6 +36,8 @@ export default function NoteListScreen() {
   const router = useRouter();
   const { isAuthenticated } = useAuth();
   const { notes: apiNotes, folders, isLoading, error, fetchNotes, deleteNote, moveNote } = useNotes();
+  const updateNoteMutation = useUpdateNoteMutation();
+  const queryClient = useQueryClient();
   const [refreshing, setRefreshing] = useState(false);
   const [showMoveSheet, setShowMoveSheet] = useState(false);
   const [showSearchOverlay, setShowSearchOverlay] = useState(false);
@@ -83,6 +87,7 @@ export default function NoteListScreen() {
         },
         folderId: n.folder_id || folderId || '',
         tags: n.tags || [],
+        isPinned: n.is_pinned || false,
       }));
     }
     // Only use mock data when not authenticated
@@ -228,6 +233,48 @@ export default function NoteListScreen() {
     }
   }, [noteToMove, isAuthenticated, folderId, isAllNotesFolder, fetchNotes]);
 
+  const handlePinNote = useCallback((noteId: string) => {
+    const note = notes.find(n => n.id === noteId);
+    if (!note) return;
+
+    const newPinnedState = !note.isPinned;
+
+    // Optimistic update - update all note list queries in cache
+    queryClient.setQueriesData(
+      { queryKey: queryKeys.notes.lists() },
+      (oldData: any) => {
+        if (!oldData) return oldData;
+        // Handle both array and object with items
+        if (Array.isArray(oldData)) {
+          return oldData.map((n: NoteListItem) =>
+            n.id === noteId ? { ...n, is_pinned: newPinnedState } : n
+          );
+        }
+        if (oldData.items) {
+          return {
+            ...oldData,
+            items: oldData.items.map((n: NoteListItem) =>
+              n.id === noteId ? { ...n, is_pinned: newPinnedState } : n
+            ),
+          };
+        }
+        return oldData;
+      }
+    );
+
+    // Update in background (writes to SQLite + queues for sync)
+    updateNoteMutation.mutate(
+      { noteId, data: { is_pinned: newPinnedState } },
+      {
+        onError: () => {
+          // Revert on error by refetching
+          queryClient.invalidateQueries({ queryKey: queryKeys.notes.lists() });
+          Alert.alert('Error', 'Failed to update note. Please try again.');
+        },
+      }
+    );
+  }, [notes, updateNoteMutation, queryClient]);
+
   const renderSectionHeader = ({ section }: { section: Section }) => (
     <View style={styles.sectionHeader}>
       <Text style={styles.sectionTitle}>{section.title}</Text>
@@ -240,6 +287,7 @@ export default function NoteListScreen() {
       onPress={() => handleNotePress(item)}
       onDelete={handleDeleteNote}
       onMove={handleMoveNote}
+      onPin={handlePinNote}
       isEditMode={false}
       isSelected={false}
       onSelect={() => {}}

@@ -1,267 +1,142 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
-import { initializeDatabase } from '../services/db';
-import { syncEngine, SyncProgress, SyncResult, SyncState } from '../services/sync';
-import { audioUploadManager, AudioUpload } from '../services/audio';
-import { foldersRepository } from '../services/repositories';
+import { syncEngine, audioUploader, type SyncStatus, type UploadStatus } from '@/lib/sync';
 import { useNetwork } from './NetworkContext';
+import { useAuth } from './AuthContext';
 
 interface SyncContextType {
-  // Initialization
-  isInitialized: boolean;
-  isHydrated: boolean;
-  initError: string | null;
-
-  // Sync state
-  syncState: SyncState;
-  syncProgress: SyncProgress | null;
+  // Sync status
+  isSyncing: boolean;
+  pendingCount: number;
+  failedCount: number;
   lastSyncAt: string | null;
-  pendingChangesCount: number;
-
-  // Audio uploads
-  pendingUploadsCount: number;
-  pendingUploadsSize: number;
-  audioUploads: AudioUpload[];
-
+  lastError: string | null;
+  // Audio upload status
+  isUploadingAudio: boolean;
+  pendingAudioUploads: number;
+  currentAudioUpload: UploadStatus['currentUpload'];
   // Actions
-  sync: () => Promise<SyncResult>;
-  processAudioUploads: () => Promise<void>;
-  refreshPendingCounts: () => Promise<void>;
+  syncNow: () => Promise<void>;
+  retryFailed: () => Promise<void>;
 }
 
-const SyncContext = createContext<SyncContextType | undefined>(undefined);
+const SyncContext = createContext<SyncContextType | null>(null);
 
-interface SyncProviderProps {
-  children: React.ReactNode;
-}
-
-export function SyncProvider({ children }: SyncProviderProps) {
+export function SyncProvider({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
   const { isOnline } = useNetwork();
-
-  // Initialization state
-  const [isInitialized, setIsInitialized] = useState(false);
-  const [isHydrated, setIsHydrated] = useState(false);
-  const [initError, setInitError] = useState<string | null>(null);
-
-  // Sync state
-  const [syncState, setSyncState] = useState<SyncState>('idle');
-  const [syncProgress, setSyncProgress] = useState<SyncProgress | null>(null);
-  const [lastSyncAt, setLastSyncAt] = useState<string | null>(null);
-  const [pendingChangesCount, setPendingChangesCount] = useState(0);
-
-  // Audio uploads
-  const [pendingUploadsCount, setPendingUploadsCount] = useState(0);
-  const [pendingUploadsSize, setPendingUploadsSize] = useState(0);
-  const [audioUploads, setAudioUploads] = useState<AudioUpload[]>([]);
-
-  // Refs for tracking
+  const [status, setStatus] = useState<SyncStatus>({
+    isSyncing: false,
+    pendingCount: 0,
+    failedCount: 0,
+    lastSyncAt: null,
+    lastError: null,
+  });
+  const [uploadStatus, setUploadStatus] = useState<UploadStatus>({
+    isUploading: false,
+    pendingCount: 0,
+    currentUpload: null,
+    lastError: null,
+  });
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
-  const lastSyncTimeRef = useRef<number>(0);
 
-  // Initialize database and check hydration status
+  // Initialize sync engine and audio uploader when user is available
   useEffect(() => {
-    async function initialize() {
-      try {
-        console.log('[SyncContext] Initializing database...');
-        await initializeDatabase();
+    if (!user?.id) return;
 
-        // Ensure default folders exist locally
-        await foldersRepository.setupDefaultFolders();
+    syncEngine.initialize(user.id);
+    audioUploader.initialize();
 
-        const hydrated = await syncEngine.isHydrated();
-        setIsHydrated(hydrated);
-
-        const lastSync = await syncEngine.getLastSyncAt();
-        setLastSyncAt(lastSync);
-
-        setIsInitialized(true);
-        console.log('[SyncContext] Initialization complete, hydrated:', hydrated);
-
-        // Refresh counts
-        await refreshPendingCounts();
-      } catch (error) {
-        const errorMsg = error instanceof Error ? error.message : 'Failed to initialize';
-        console.error('[SyncContext] Initialization failed:', errorMsg);
-        setInitError(errorMsg);
-      }
-    }
-
-    initialize();
-  }, []);
-
-  // Set up sync engine progress callback
-  useEffect(() => {
-    syncEngine.onProgress((progress) => {
-      setSyncState(progress.state);
-      setSyncProgress(progress);
+    // Subscribe to status changes
+    const unsubscribeSyncEngine = syncEngine.subscribe((newStatus) => {
+      setStatus(newStatus);
     });
 
-    audioUploadManager.onProgress((upload) => {
-      setAudioUploads(prev => {
-        const index = prev.findIndex(u => u.id === upload.id);
-        if (index >= 0) {
-          const updated = [...prev];
-          updated[index] = upload;
-          return updated;
-        }
-        return [...prev, upload];
-      });
+    const unsubscribeAudioUploader = audioUploader.subscribe((newStatus) => {
+      setUploadStatus(newStatus);
     });
-  }, []);
 
-  // Sync when coming back online or trigger initial hydration
+    // Get initial status
+    syncEngine.getStatus().then(setStatus);
+    audioUploader.getStatus().then(setUploadStatus);
+
+    return () => {
+      unsubscribeSyncEngine();
+      unsubscribeAudioUploader();
+    };
+  }, [user?.id]);
+
+  // Sync when coming online
   useEffect(() => {
-    if (isOnline && isInitialized) {
-      const now = Date.now();
-      // Debounce - don't sync more than once per 30 seconds
-      if (now - lastSyncTimeRef.current > 30000) {
-        if (!isHydrated) {
-          // First launch - do initial hydration
-          console.log('[SyncContext] Online and initialized, triggering initial hydration');
-          lastSyncTimeRef.current = now;
-          sync(); // sync() handles hydration internally if not hydrated
-        } else {
-          // Already hydrated - do incremental sync
-          console.log('[SyncContext] Online and initialized, triggering sync');
-          lastSyncTimeRef.current = now;
-          sync();
-        }
-      }
+    if (isOnline && user?.id) {
+      syncEngine.triggerSync();
+      // Also process audio upload queue
+      audioUploader.processQueue().catch(console.warn);
     }
-  }, [isOnline, isInitialized, isHydrated]);
+  }, [isOnline, user?.id]);
 
-  // Sync on app foreground
+  // Sync when app comes to foreground
   useEffect(() => {
-    const subscription = AppState.addEventListener('change', (nextAppState) => {
+    const handleAppStateChange = (nextAppState: AppStateStatus) => {
       if (
         appStateRef.current.match(/inactive|background/) &&
         nextAppState === 'active' &&
         isOnline &&
-        isInitialized
+        user?.id
       ) {
-        const now = Date.now();
-        // Debounce - don't sync more than once per 30 seconds
-        if (now - lastSyncTimeRef.current > 30000) {
-          console.log('[SyncContext] App foregrounded, triggering sync');
-          lastSyncTimeRef.current = now;
-          sync(); // sync() handles hydration internally if not hydrated
-        }
+        console.log('[SyncContext] App foregrounded, triggering sync');
+        syncEngine.triggerSync();
+        audioUploader.processQueue().catch(console.warn);
       }
       appStateRef.current = nextAppState;
-    });
-
-    return () => {
-      subscription.remove();
     };
-  }, [isOnline, isInitialized]);
 
-  // Refresh pending counts
-  const refreshPendingCounts = useCallback(async () => {
-    try {
-      const syncCount = await syncEngine.getPendingCount();
-      setPendingChangesCount(syncCount);
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+    return () => subscription.remove();
+  }, [isOnline, user?.id]);
 
-      const uploadCount = await audioUploadManager.getPendingCount();
-      setPendingUploadsCount(uploadCount);
-
-      const uploadSize = await audioUploadManager.getPendingSize();
-      setPendingUploadsSize(uploadSize);
-
-      const uploads = await audioUploadManager.getAllUploads();
-      setAudioUploads(uploads.filter(u => u.status !== 'completed'));
-    } catch (error) {
-      console.error('[SyncContext] Failed to refresh pending counts:', error);
-    }
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      syncEngine.destroy();
+      audioUploader.destroy();
+    };
   }, []);
 
-  // Perform sync
-  const sync = useCallback(async (): Promise<SyncResult> => {
+  const syncNow = useCallback(async () => {
     if (!isOnline) {
-      return {
-        success: false,
-        pushed: { notes: 0, folders: 0, actions: 0 },
-        pulled: { notes: 0, folders: 0 },
-        conflicts: 0,
-        errors: ['No network connection'],
-      };
+      console.log('[SyncContext] Cannot sync - offline');
+      return;
     }
 
-    if (!isInitialized) {
-      return {
-        success: false,
-        pushed: { notes: 0, folders: 0, actions: 0 },
-        pulled: { notes: 0, folders: 0 },
-        conflicts: 0,
-        errors: ['Not initialized'],
-      };
-    }
+    await syncEngine.fullSync();
+  }, [isOnline]);
 
-    // If not hydrated, do initial hydration first
-    if (!isHydrated) {
-      try {
-        await syncEngine.hydrate();
-        setIsHydrated(true);
-      } catch (error) {
-        return {
-          success: false,
-          pushed: { notes: 0, folders: 0, actions: 0 },
-          pulled: { notes: 0, folders: 0 },
-          conflicts: 0,
-          errors: [error instanceof Error ? error.message : 'Hydration failed'],
-        };
-      }
-    }
+  const retryFailed = useCallback(async () => {
+    const { syncQueueService } = await import('@/lib/sync');
+    const count = await syncQueueService.retryFailed();
+    console.log('[SyncContext] Retrying', count, 'failed items');
 
-    const result = await syncEngine.sync();
-
-    // Update last sync time
-    const syncTime = await syncEngine.getLastSyncAt();
-    setLastSyncAt(syncTime);
-
-    // Refresh counts
-    await refreshPendingCounts();
-
-    // Process audio uploads after sync
     if (isOnline) {
-      await processAudioUploads();
+      syncEngine.triggerSync();
     }
-
-    return result;
-  }, [isOnline, isInitialized, isHydrated, refreshPendingCounts]);
-
-  // Process audio uploads
-  const processAudioUploads = useCallback(async () => {
-    if (!isOnline) return;
-
-    try {
-      const result = await audioUploadManager.processAll();
-      console.log(`[SyncContext] Processed ${result.processed} audio uploads`);
-
-      // Refresh counts
-      await refreshPendingCounts();
-    } catch (error) {
-      console.error('[SyncContext] Audio upload processing failed:', error);
-    }
-  }, [isOnline, refreshPendingCounts]);
-
-  const value: SyncContextType = {
-    isInitialized,
-    isHydrated,
-    initError,
-    syncState,
-    syncProgress,
-    lastSyncAt,
-    pendingChangesCount,
-    pendingUploadsCount,
-    pendingUploadsSize,
-    audioUploads,
-    sync,
-    processAudioUploads,
-    refreshPendingCounts,
-  };
+  }, [isOnline]);
 
   return (
-    <SyncContext.Provider value={value}>
+    <SyncContext.Provider
+      value={{
+        isSyncing: status.isSyncing,
+        pendingCount: status.pendingCount,
+        failedCount: status.failedCount,
+        lastSyncAt: status.lastSyncAt,
+        lastError: status.lastError,
+        isUploadingAudio: uploadStatus.isUploading,
+        pendingAudioUploads: uploadStatus.pendingCount,
+        currentAudioUpload: uploadStatus.currentUpload,
+        syncNow,
+        retryFailed,
+      }}
+    >
       {children}
     </SyncContext.Provider>
   );
@@ -269,7 +144,7 @@ export function SyncProvider({ children }: SyncProviderProps) {
 
 export function useSync(): SyncContextType {
   const context = useContext(SyncContext);
-  if (context === undefined) {
+  if (!context) {
     throw new Error('useSync must be used within a SyncProvider');
   }
   return context;

@@ -140,9 +140,10 @@ export function AddContentModal({
   };
 
   const handleStopRecording = async () => {
-    const uri = await stopRecording();
-    if (uri) {
-      setLocalRecordingUri(uri);
+    const result = await stopRecording();
+    if (result) {
+      // Prefer localPath (permanent storage) over uri (temp)
+      setLocalRecordingUri(result.localPath || result.uri);
     }
   };
 

@@ -148,16 +148,17 @@ export default function RecordingScreen() {
 
   // Just stop recording, don't process yet
   const handleStopRecording = async (): Promise<string | null> => {
-    const uri = await stopRecording();
+    const result = await stopRecording();
 
-    if (!uri) {
+    if (!result) {
       Alert.alert('Error', 'Failed to save recording');
       return null;
     }
 
-    // Save the URI for later processing
-    setPendingAudioUri(uri);
-    return uri;
+    // Save the local path for later processing (prefer permanent storage)
+    const audioPath = result.localPath || result.uri;
+    setPendingAudioUri(audioPath);
+    return audioPath;
   };
 
   // Handle "Add to..." button - open note selection sheet

@@ -59,6 +59,7 @@ export interface Note {
   actions: NoteActions;
   folderId: string;
   tags: string[];
+  isPinned?: boolean;
 }
 
 export interface Folder {

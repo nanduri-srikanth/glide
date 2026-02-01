@@ -1,17 +1,29 @@
-import { useEffect, useCallback, useRef } from 'react';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import { useEffect, useCallback, useRef, useState } from 'react';
+import { View, ActivityIndicator, StyleSheet, Text } from 'react-native';
 import { DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as Linking from 'expo-linking';
 import 'react-native-reanimated';
 
+// TanStack Query for SWR caching
+import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
+import { getQueryClient } from '@/lib/queryClient';
+import { asyncStoragePersister } from '@/lib/persister';
+
+// Database and sync
+import { initializeDatabase, hydrateFromServer, isDatabaseInitialized, resetDatabase } from '@/lib/database';
+import { syncEngine } from '@/lib/sync';
+
 import { NotesColors } from '@/constants/theme';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
+import { NetworkProvider, useNetwork } from '@/context/NetworkContext';
 import { NotesProvider } from '@/context/NotesContext';
-import { NetworkProvider } from '@/context/NetworkContext';
 import { SyncProvider } from '@/context/SyncContext';
 import { useNavigationPersistence } from '@/hooks/useNavigationPersistence';
+
+// Initialize query client
+const queryClient = getQueryClient();
 
 // Deep link URL parsing
 const parseDeepLink = (url: string): { action: string; params: Record<string, string> } | null => {
@@ -49,6 +61,111 @@ const PurpleLightTheme = {
     notification: NotesColors.secondary,
   },
 };
+
+/**
+ * Database Initializer - Initializes SQLite and hydrates data
+ */
+function DatabaseInitializer({ children }: { children: React.ReactNode }) {
+  const { user, isLoading: isAuthLoading } = useAuth();
+  const { isOnline } = useNetwork();
+  const [dbState, setDbState] = useState<'initializing' | 'hydrating' | 'ready' | 'error'>('initializing');
+  const [error, setError] = useState<string | null>(null);
+  const initStarted = useRef(false);
+  const retryCount = useRef(0);
+
+  useEffect(() => {
+    // Wait for auth to finish loading
+    if (isAuthLoading) return;
+
+    // Prevent multiple initializations
+    if (initStarted.current) return;
+    initStarted.current = true;
+
+    const init = async () => {
+      try {
+        // 1. Initialize SQLite database
+        console.log('[DatabaseInitializer] Initializing database...');
+        await initializeDatabase();
+        console.log('[DatabaseInitializer] Database initialized');
+
+        // 2. If user is logged in and online, hydrate from server (non-blocking)
+        if (user?.id && isOnline) {
+          setDbState('hydrating');
+          console.log('[DatabaseInitializer] Hydrating from server...');
+          const hydrated = await hydrateFromServer(user.id);
+          if (hydrated) {
+            console.log('[DatabaseInitializer] Hydration complete');
+          } else {
+            console.log('[DatabaseInitializer] Hydration incomplete, will use API fallback');
+          }
+
+          // 3. Initialize sync engine regardless of hydration status
+          await syncEngine.initialize(user.id);
+        }
+
+        setDbState('ready');
+      } catch (err) {
+        console.error('[DatabaseInitializer] Initialization failed:', err);
+        const errorMessage = err instanceof Error ? err.message : 'Database initialization failed';
+
+        // Only attempt reset for schema-related errors (corrupted state)
+        const isSchemaError = errorMessage.includes('no such column') ||
+                             errorMessage.includes('no such table') ||
+                             errorMessage.includes('SQLITE_CORRUPT');
+
+        if (isSchemaError && retryCount.current === 0) {
+          retryCount.current = 1;
+          console.log('[DatabaseInitializer] Schema error detected, attempting database reset...');
+          try {
+            await resetDatabase();
+            console.log('[DatabaseInitializer] Database reset successful');
+            setDbState('ready');
+            return;
+          } catch (resetErr) {
+            console.error('[DatabaseInitializer] Reset also failed:', resetErr);
+          }
+        }
+
+        setError(errorMessage);
+        setDbState('error');
+      }
+    };
+
+    init();
+  }, [isAuthLoading, user?.id, isOnline]);
+
+  // Re-initialize sync engine when user logs in
+  useEffect(() => {
+    if (dbState === 'ready' && user?.id && isDatabaseInitialized()) {
+      syncEngine.initialize(user.id).catch(console.warn);
+
+      // Hydrate if online
+      if (isOnline) {
+        hydrateFromServer(user.id).catch(console.warn);
+      }
+    }
+  }, [user?.id, dbState, isOnline]);
+
+  // Show loading while initializing
+  if (dbState === 'initializing' || dbState === 'hydrating') {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={NotesColors.primary} />
+        <Text style={styles.loadingText}>
+          {dbState === 'hydrating' ? 'Syncing data...' : 'Loading...'}
+        </Text>
+      </View>
+    );
+  }
+
+  // Show error if initialization failed (but allow retry)
+  if (dbState === 'error') {
+    console.warn('[DatabaseInitializer] Error state, continuing with API fallback:', error);
+    // Continue anyway - hooks will fallback to API if database isn't ready
+  }
+
+  return <>{children}</>;
+}
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth();
@@ -149,21 +266,25 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
 function RootLayoutNav() {
   return (
     <ThemeProvider value={PurpleLightTheme}>
-      <AuthGuard>
-        <Stack
-          screenOptions={{
-            headerStyle: { backgroundColor: NotesColors.background },
-            headerTintColor: NotesColors.textPrimary,
-            headerTitleStyle: { fontWeight: '600' },
-            contentStyle: { backgroundColor: NotesColors.background },
-          }}
-        >
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen name="notes" options={{ headerShown: false }} />
-          <Stack.Screen name="recording" options={{ presentation: 'modal', headerShown: false }} />
-          <Stack.Screen name="auth" options={{ headerShown: false }} />
-        </Stack>
-      </AuthGuard>
+      <DatabaseInitializer>
+        <SyncProvider>
+          <AuthGuard>
+            <Stack
+              screenOptions={{
+                headerStyle: { backgroundColor: NotesColors.background },
+                headerTintColor: NotesColors.textPrimary,
+                headerTitleStyle: { fontWeight: '600' },
+                contentStyle: { backgroundColor: NotesColors.background },
+              }}
+            >
+              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+              <Stack.Screen name="notes" options={{ headerShown: false }} />
+              <Stack.Screen name="recording" options={{ presentation: 'modal', headerShown: false }} />
+              <Stack.Screen name="auth" options={{ headerShown: false }} />
+            </Stack>
+          </AuthGuard>
+        </SyncProvider>
+      </DatabaseInitializer>
       <StatusBar style="dark" />
     </ThemeProvider>
   );
@@ -171,15 +292,18 @@ function RootLayoutNav() {
 
 export default function RootLayout() {
   return (
-    <NetworkProvider>
-      <SyncProvider>
+    <PersistQueryClientProvider
+      client={queryClient}
+      persistOptions={{ persister: asyncStoragePersister }}
+    >
+      <NetworkProvider>
         <AuthProvider>
           <NotesProvider>
             <RootLayoutNav />
           </NotesProvider>
         </AuthProvider>
-      </SyncProvider>
-    </NetworkProvider>
+      </NetworkProvider>
+    </PersistQueryClientProvider>
   );
 }
 
@@ -189,5 +313,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: NotesColors.background,
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: NotesColors.textSecondary,
   },
 });
