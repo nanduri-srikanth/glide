@@ -1,5 +1,6 @@
 import React from 'react';
 import { StyleSheet, TouchableOpacity, View, Text } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { NotesColors } from '@/constants/theme';
 import { Note } from '@/data/types';
 import { formatRelativeTime, formatDuration } from '@/data/mockNotes';
@@ -21,9 +22,14 @@ export function NoteCard({ note, onPress }: NoteCardProps) {
   return (
     <TouchableOpacity style={styles.container} onPress={onPress} activeOpacity={0.7}>
       <View style={styles.header}>
-        <Text style={styles.title} numberOfLines={1}>
-          {note.title}
-        </Text>
+        <View style={styles.titleRow}>
+          {note.isPinned && (
+            <Ionicons name="pin-sharp" size={16} color="#FF9500" style={styles.pinIcon} />
+          )}
+          <Text style={styles.title} numberOfLines={1}>
+            {note.title}
+          </Text>
+        </View>
         <Text style={styles.time}>{formatRelativeTime(note.timestamp)}</Text>
       </View>
 
@@ -62,12 +68,20 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     marginBottom: 8,
   },
+  titleRow: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  pinIcon: {
+    marginRight: 6,
+  },
   title: {
     flex: 1,
     fontSize: 17,
     fontWeight: '600',
     color: NotesColors.textPrimary,
-    marginRight: 8,
   },
   time: {
     fontSize: 13,

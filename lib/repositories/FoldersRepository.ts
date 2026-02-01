@@ -79,24 +79,59 @@ class FoldersRepository extends BaseRepository<FolderRow, FolderInsert, typeof f
   }
 
   /**
+   * Get total count of all notes for a user
+   */
+  private async getTotalNoteCount(userId: string): Promise<number> {
+    try {
+      const result = await db
+        .select({
+          count: sql<number>`count(*)`,
+        })
+        .from(notes)
+        .where(
+          and(
+            eq(notes.user_id, userId),
+            eq(notes.is_deleted, false),
+            eq(notes.is_archived, false)
+          )
+        );
+
+      return result[0]?.count || 0;
+    } catch (err) {
+      console.warn('[FoldersRepository] Failed to get total note count:', err);
+      return 0;
+    }
+  }
+
+  /**
    * List folders as a tree structure (matching API response format)
    */
   async list(userId: string): Promise<LocalFolderResponse[]> {
     const allFolders = await this.listFlat(userId);
-    const noteCounts = await this.getNoteCounts(userId);
-    return this.buildTree(allFolders, noteCounts);
+    const [noteCounts, totalCount] = await Promise.all([
+      this.getNoteCounts(userId),
+      this.getTotalNoteCount(userId),
+    ]);
+    return this.buildTree(allFolders, noteCounts, totalCount);
   }
 
   /**
    * Build tree structure from flat folder list
    */
-  private buildTree(flatFolders: FolderRow[], noteCounts: Record<string, number> = {}): LocalFolderResponse[] {
+  private buildTree(
+    flatFolders: FolderRow[],
+    noteCounts: Record<string, number> = {},
+    totalCount: number = 0
+  ): LocalFolderResponse[] {
     const folderMap = new Map<string, LocalFolderResponse>();
     const rootFolders: LocalFolderResponse[] = [];
 
     // First pass: create all folder response objects
     for (const folder of flatFolders) {
-      folderMap.set(folder.id, this.toResponse(folder, noteCounts[folder.id] || 0));
+      // "All Notes" system folder should show total count of all notes
+      const isAllNotesFolder = folder.is_system && folder.name === 'All Notes';
+      const count = isAllNotesFolder ? totalCount : (noteCounts[folder.id] || 0);
+      folderMap.set(folder.id, this.toResponse(folder, count));
     }
 
     // Second pass: build tree structure

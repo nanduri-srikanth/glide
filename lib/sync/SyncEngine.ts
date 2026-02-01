@@ -255,8 +255,10 @@ class SyncEngine {
 
   /**
    * Sync notes from server (pull)
+   * @param filters - Note filters
+   * @param invalidateCache - Whether to invalidate query cache after sync (default: false)
    */
-  async syncNotes(filters: NoteFilters = {}): Promise<void> {
+  async syncNotes(filters: NoteFilters = {}, invalidateCache: boolean = false): Promise<void> {
     if (!this.userId) {
       console.warn('[SyncEngine] No user ID, skipping notes sync');
       return;
@@ -279,9 +281,12 @@ class SyncEngine {
           }
         }
 
-        // Invalidate TanStack Query cache
-        const queryClient = getQueryClient();
-        queryClient.invalidateQueries({ queryKey: ['notes'] });
+        // Only invalidate cache if explicitly requested
+        // This prevents race conditions with optimistic updates
+        if (invalidateCache) {
+          const queryClient = getQueryClient();
+          queryClient.invalidateQueries({ queryKey: ['notes'] });
+        }
       }
     } catch (error) {
       console.error('[SyncEngine] Notes sync failed:', error);
@@ -290,8 +295,9 @@ class SyncEngine {
 
   /**
    * Sync folders from server (pull)
+   * @param invalidateCache - Whether to invalidate query cache after sync (default: false)
    */
-  async syncFolders(): Promise<void> {
+  async syncFolders(invalidateCache: boolean = false): Promise<void> {
     if (!this.userId) {
       console.warn('[SyncEngine] No user ID, skipping folders sync');
       return;
@@ -308,9 +314,11 @@ class SyncEngine {
       if (data) {
         await foldersRepository.bulkUpsert(data, this.userId);
 
-        // Invalidate TanStack Query cache
-        const queryClient = getQueryClient();
-        queryClient.invalidateQueries({ queryKey: ['folders'] });
+        // Only invalidate cache if explicitly requested
+        if (invalidateCache) {
+          const queryClient = getQueryClient();
+          queryClient.invalidateQueries({ queryKey: ['folders'] });
+        }
       }
     } catch (error) {
       console.error('[SyncEngine] Folders sync failed:', error);
@@ -319,6 +327,7 @@ class SyncEngine {
 
   /**
    * Full sync - push local changes, then pull from server
+   * This is a user-triggered action, so we invalidate cache after
    */
   async fullSync(): Promise<void> {
     console.log('[SyncEngine] Starting full sync');
@@ -326,10 +335,10 @@ class SyncEngine {
     // First push local changes
     await this.processQueue();
 
-    // Then pull from server
+    // Then pull from server and invalidate cache (explicit user action)
     await Promise.all([
-      this.syncNotes(),
-      this.syncFolders(),
+      this.syncNotes({}, true),
+      this.syncFolders(true),
     ]);
 
     console.log('[SyncEngine] Full sync complete');

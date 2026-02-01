@@ -71,6 +71,21 @@ export const metadata = sqliteTable('metadata', {
   updated_at: text('updated_at').notNull(),
 });
 
+export type AudioUploadStatus = 'pending' | 'uploading' | 'completed' | 'failed';
+
+export const audioUploads = sqliteTable('audio_uploads', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  note_id: text('note_id').notNull(),
+  local_path: text('local_path').notNull(),
+  remote_url: text('remote_url'), // Set after successful upload
+  file_size: integer('file_size'),
+  status: text('status').$type<AudioUploadStatus>().default('pending'),
+  retry_count: integer('retry_count').default(0),
+  last_error: text('last_error'),
+  created_at: text('created_at').notNull(),
+  uploaded_at: text('uploaded_at'),
+});
+
 // Type exports for use in repositories
 export type NoteRow = typeof notes.$inferSelect;
 export type NoteInsert = typeof notes.$inferInsert;
@@ -81,3 +96,5 @@ export type ActionInsert = typeof actions.$inferInsert;
 export type SyncQueueRow = typeof syncQueue.$inferSelect;
 export type SyncQueueInsert = typeof syncQueue.$inferInsert;
 export type MetadataRow = typeof metadata.$inferSelect;
+export type AudioUploadRow = typeof audioUploads.$inferSelect;
+export type AudioUploadInsert = typeof audioUploads.$inferInsert;

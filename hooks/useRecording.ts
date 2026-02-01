@@ -1,11 +1,13 @@
 /**
  * useRecording Hook - Audio recording with expo-av
  * Includes Live Activity support for Dynamic Island
+ * Supports offline-first audio persistence
  */
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { Audio } from 'expo-av';
 import { voiceService, VoiceProcessingResponse, SynthesisResponse } from '@/services/voice';
+import { audioStorage } from '@/services/audioStorage';
 import { useLiveActivity } from './useLiveActivity';
 
 interface RecordingState {
@@ -13,6 +15,7 @@ interface RecordingState {
   isPaused: boolean;
   duration: number;
   uri: string | null;
+  localPath: string | null; // Permanent local storage path
 }
 
 export function useRecording() {
@@ -21,6 +24,7 @@ export function useRecording() {
     isPaused: false,
     duration: 0,
     uri: null,
+    localPath: null,
   });
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingProgress, setProcessingProgress] = useState(0);
@@ -80,7 +84,7 @@ export function useRecording() {
     }
   }, [startRecordingActivity]);
 
-  const stopRecording = useCallback(async (): Promise<string | null> => {
+  const stopRecording = useCallback(async (noteId?: string): Promise<{ uri: string; localPath: string } | null> => {
     try {
       if (!recordingRef.current) return null;
       if (timerRef.current) clearInterval(timerRef.current);
@@ -90,13 +94,32 @@ export function useRecording() {
       const uri = recordingRef.current.getURI();
       await Audio.setAudioModeAsync({ allowsRecordingIOS: false });
 
+      if (!uri) {
+        recordingRef.current = null;
+        setError('No recording URI');
+        return null;
+      }
+
+      // Generate a temp note ID if not provided (for permanent storage)
+      const id = noteId || `temp_${Date.now()}`;
+
+      // Save to permanent storage
+      let localPath: string | null = null;
+      try {
+        localPath = await audioStorage.saveAudioPermanently(uri, id);
+        console.log('[useRecording] Audio saved permanently:', localPath);
+      } catch (err) {
+        console.warn('[useRecording] Failed to save audio permanently, using temp URI:', err);
+        localPath = uri; // Fall back to temp URI
+      }
+
       recordingRef.current = null;
-      setState(prev => ({ ...prev, isRecording: false, isPaused: false, uri }));
+      setState(prev => ({ ...prev, isRecording: false, isPaused: false, uri, localPath }));
 
       // Stop Live Activity with final duration
       await stopRecordingActivity(finalDuration);
 
-      return uri;
+      return { uri, localPath };
     } catch (err) {
       setError('Failed to stop recording');
       return null;
@@ -134,15 +157,26 @@ export function useRecording() {
   }, [state.duration, updateRecordingActivity]);
 
   const cancelRecording = useCallback(async () => {
+    // Clean up any saved audio file
+    if (state.localPath && state.localPath !== state.uri) {
+      try {
+        await audioStorage.deleteAudio(state.localPath);
+      } catch (err) {
+        console.warn('[useRecording] Failed to delete local audio:', err);
+      }
+    }
+
     cleanup();
-    setState({ isRecording: false, isPaused: false, duration: 0, uri: null });
+    setState({ isRecording: false, isPaused: false, duration: 0, uri: null, localPath: null });
 
     // Cancel Live Activity
     await cancelRecordingActivity();
-  }, [cancelRecordingActivity]);
+  }, [cancelRecordingActivity, state.localPath, state.uri]);
 
   const processRecording = useCallback(async (folderId?: string, userNotes?: string): Promise<VoiceProcessingResponse | null> => {
-    if (!state.uri) {
+    // Prefer localPath (permanent storage) over uri (temp)
+    const audioPath = state.localPath || state.uri;
+    if (!audioPath) {
       setError('No recording to process');
       return null;
     }
@@ -152,7 +186,7 @@ export function useRecording() {
 
     try {
       const { data, error: apiError } = await voiceService.processVoiceMemo(
-        state.uri,
+        audioPath,
         folderId,
         (progress, status) => {
           setProcessingProgress(progress);
@@ -174,7 +208,7 @@ export function useRecording() {
       setProcessingProgress(0);
       setProcessingStatus('');
     }
-  }, [state.uri]);
+  }, [state.localPath, state.uri]);
 
   /**
    * Synthesize a note from the current recording and/or text input.
@@ -184,8 +218,11 @@ export function useRecording() {
     textInput?: string,
     folderId?: string
   ): Promise<SynthesisResponse | null> => {
+    // Prefer localPath (permanent storage) over uri (temp)
+    const audioPath = state.localPath || state.uri;
+
     // At least one of recording or text must be provided
-    if (!state.uri && !textInput?.trim()) {
+    if (!audioPath && !textInput?.trim()) {
       setError('Please provide text or record audio');
       return null;
     }
@@ -197,7 +234,7 @@ export function useRecording() {
       const { data, error: apiError } = await voiceService.synthesizeNote(
         {
           textInput: textInput?.trim() || undefined,
-          audioUri: state.uri || undefined,
+          audioUri: audioPath || undefined,
           folderId,
         },
         (progress, status) => {
@@ -219,23 +256,33 @@ export function useRecording() {
       setProcessingProgress(0);
       setProcessingStatus('');
     }
-  }, [state.uri]);
+  }, [state.localPath, state.uri]);
 
-  const resetState = useCallback(async () => {
+  const resetState = useCallback(async (deleteLocalAudio: boolean = false) => {
+    // Optionally clean up saved audio file
+    if (deleteLocalAudio && state.localPath && state.localPath !== state.uri) {
+      try {
+        await audioStorage.deleteAudio(state.localPath);
+      } catch (err) {
+        console.warn('[useRecording] Failed to delete local audio:', err);
+      }
+    }
+
     cleanup();
-    setState({ isRecording: false, isPaused: false, duration: 0, uri: null });
+    setState({ isRecording: false, isPaused: false, duration: 0, uri: null, localPath: null });
     setError(null);
     setIsProcessing(false);
 
     // Cancel any active Live Activity
     await cancelRecordingActivity();
-  }, [cancelRecordingActivity]);
+  }, [cancelRecordingActivity, state.localPath, state.uri]);
 
   return {
     isRecording: state.isRecording,
     isPaused: state.isPaused,
     duration: state.duration,
     recordingUri: state.uri,
+    localAudioPath: state.localPath,
     isProcessing,
     processingProgress,
     processingStatus,

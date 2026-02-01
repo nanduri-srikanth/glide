@@ -1,15 +1,21 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
-import { syncEngine, type SyncStatus } from '@/lib/sync';
+import { syncEngine, audioUploader, type SyncStatus, type UploadStatus } from '@/lib/sync';
 import { useNetwork } from './NetworkContext';
 import { useAuth } from './AuthContext';
 
 interface SyncContextType {
+  // Sync status
   isSyncing: boolean;
   pendingCount: number;
   failedCount: number;
   lastSyncAt: string | null;
   lastError: string | null;
+  // Audio upload status
+  isUploadingAudio: boolean;
+  pendingAudioUploads: number;
+  currentAudioUpload: UploadStatus['currentUpload'];
+  // Actions
   syncNow: () => Promise<void>;
   retryFailed: () => Promise<void>;
 }
@@ -26,24 +32,37 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     lastSyncAt: null,
     lastError: null,
   });
+  const [uploadStatus, setUploadStatus] = useState<UploadStatus>({
+    isUploading: false,
+    pendingCount: 0,
+    currentUpload: null,
+    lastError: null,
+  });
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
 
-  // Initialize sync engine when user is available
+  // Initialize sync engine and audio uploader when user is available
   useEffect(() => {
     if (!user?.id) return;
 
     syncEngine.initialize(user.id);
+    audioUploader.initialize();
 
     // Subscribe to status changes
-    const unsubscribe = syncEngine.subscribe((newStatus) => {
+    const unsubscribeSyncEngine = syncEngine.subscribe((newStatus) => {
       setStatus(newStatus);
+    });
+
+    const unsubscribeAudioUploader = audioUploader.subscribe((newStatus) => {
+      setUploadStatus(newStatus);
     });
 
     // Get initial status
     syncEngine.getStatus().then(setStatus);
+    audioUploader.getStatus().then(setUploadStatus);
 
     return () => {
-      unsubscribe();
+      unsubscribeSyncEngine();
+      unsubscribeAudioUploader();
     };
   }, [user?.id]);
 
@@ -51,6 +70,8 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (isOnline && user?.id) {
       syncEngine.triggerSync();
+      // Also process audio upload queue
+      audioUploader.processQueue().catch(console.warn);
     }
   }, [isOnline, user?.id]);
 
@@ -65,6 +86,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       ) {
         console.log('[SyncContext] App foregrounded, triggering sync');
         syncEngine.triggerSync();
+        audioUploader.processQueue().catch(console.warn);
       }
       appStateRef.current = nextAppState;
     };
@@ -77,6 +99,7 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     return () => {
       syncEngine.destroy();
+      audioUploader.destroy();
     };
   }, []);
 
@@ -107,6 +130,9 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
         failedCount: status.failedCount,
         lastSyncAt: status.lastSyncAt,
         lastError: status.lastError,
+        isUploadingAudio: uploadStatus.isUploading,
+        pendingAudioUploads: uploadStatus.pendingCount,
+        currentAudioUpload: uploadStatus.currentUpload,
         syncNow,
         retryFailed,
       }}

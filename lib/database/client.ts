@@ -104,8 +104,23 @@ const CREATE_METADATA_TABLE = `
   )
 `;
 
+const CREATE_AUDIO_UPLOADS_TABLE = `
+  CREATE TABLE IF NOT EXISTS audio_uploads (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    note_id TEXT NOT NULL,
+    local_path TEXT NOT NULL,
+    remote_url TEXT,
+    file_size INTEGER,
+    status TEXT DEFAULT 'pending',
+    retry_count INTEGER DEFAULT 0,
+    last_error TEXT,
+    created_at TEXT NOT NULL,
+    uploaded_at TEXT
+  )
+`;
+
 // Schema version - increment when schema changes
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 let isInitialized = false;
 let initPromise: Promise<void> | null = null;
@@ -221,6 +236,7 @@ export async function initializeDatabase(): Promise<void> {
         { name: 'actions', sql: CREATE_ACTIONS_TABLE },
         { name: 'sync_queue', sql: CREATE_SYNC_QUEUE_TABLE },
         { name: 'metadata', sql: CREATE_METADATA_TABLE },
+        { name: 'audio_uploads', sql: CREATE_AUDIO_UPLOADS_TABLE },
       ];
 
       for (const { name, sql } of statements) {
@@ -247,6 +263,8 @@ export async function initializeDatabase(): Promise<void> {
         'CREATE INDEX IF NOT EXISTS idx_folders_parent_id ON folders(parent_id)',
         'CREATE INDEX IF NOT EXISTS idx_actions_note_id ON actions(note_id)',
         'CREATE INDEX IF NOT EXISTS idx_sync_queue_status ON sync_queue(status)',
+        'CREATE INDEX IF NOT EXISTS idx_audio_uploads_note_id ON audio_uploads(note_id)',
+        'CREATE INDEX IF NOT EXISTS idx_audio_uploads_status ON audio_uploads(status)',
       ];
 
       for (const sql of indexStatements) {
@@ -307,6 +325,7 @@ export async function clearDatabase(): Promise<void> {
   db.execSync('DELETE FROM actions');
   db.execSync('DELETE FROM sync_queue');
   db.execSync('DELETE FROM metadata');
+  db.execSync('DELETE FROM audio_uploads');
   console.log('[Database] All data cleared');
 }
 

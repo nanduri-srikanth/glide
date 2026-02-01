@@ -315,13 +315,29 @@ export function useUpdateNoteMutation() {
       if (error) throw new Error(error);
       return note!;
     },
-    onSuccess: (updatedNote, { noteId }) => {
+    onSuccess: (updatedNote, { noteId, data }) => {
       // Update the detail cache
       queryClient.setQueryData(queryKeys.notes.detail(noteId), updatedNote);
-      // Invalidate lists to reflect changes
-      queryClient.invalidateQueries({ queryKey: queryKeys.notes.lists() });
+
+      // Only invalidate lists if folder changed (not for pin/archive updates)
+      // Pin/archive updates use optimistic updates so we don't want to refetch
+      const isPinOrArchiveOnly =
+        data.is_pinned !== undefined || data.is_archived !== undefined;
+      const hasOtherChanges =
+        data.title !== undefined ||
+        data.transcript !== undefined ||
+        data.folder_id !== undefined ||
+        data.tags !== undefined;
+
+      if (!isPinOrArchiveOnly || hasOtherChanges) {
+        // Invalidate lists to reflect changes
+        queryClient.invalidateQueries({ queryKey: queryKeys.notes.lists() });
+      }
+
       // Invalidate folders if folder changed
-      queryClient.invalidateQueries({ queryKey: queryKeys.folders.all });
+      if (data.folder_id !== undefined) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.folders.all });
+      }
     },
   });
 }
