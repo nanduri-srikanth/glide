@@ -129,13 +129,13 @@ export function useNoteDetail(noteId: string | undefined) {
 
   /**
    * Add content to an existing note (text and/or audio).
-   * Uses the new synthesis endpoint for intelligent merging.
+   * Default behavior: transcribe and append (no AI re-synthesis).
+   * User can explicitly set resynthesize=true to combine/summarize.
    */
   const addContent = useCallback(async (options: {
     textInput?: string;
     audioUri?: string;
     resynthesize?: boolean;
-    autoDecide?: boolean;
   }): Promise<boolean> => {
     if (!noteId) return false;
 
@@ -146,7 +146,10 @@ export function useNoteDetail(noteId: string | undefined) {
 
     const { data, error: apiError } = await voiceService.addToNote(
       noteId,
-      options,
+      {
+        ...options,
+        autoDecide: false,  // Don't let AI auto-decide - user controls resynthesize explicitly
+      },
       (progress, status) => {
         setAppendProgress(progress);
         setAppendStatus(status);

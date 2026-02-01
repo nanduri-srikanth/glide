@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { StyleSheet, SafeAreaView, Alert, View, Text, ActivityIndicator, Animated } from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter, useLocalSearchParams, useNavigation } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { NotesColors } from '@/constants/theme';
 import { RecordingOverlay, RecordingDestination } from '@/components/notes/RecordingOverlay';
@@ -16,8 +16,18 @@ type FlowMode = 'idle' | 'quick' | 'add-to-note' | 'into-folder';
 
 export default function RecordingScreen() {
   const router = useRouter();
+  const navigation = useNavigation();
   const { folderId, autoStart } = useLocalSearchParams<{ folderId?: string; autoStart?: string }>();
   const { isAuthenticated } = useAuth();
+
+  // Safe navigation back - handles both modal and stack navigation
+  const safeGoBack = () => {
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      router.replace('/(tabs)');
+    }
+  };
   const hasAutoStarted = useRef(false);
   const { fetchFolders } = useNotes();
   const {
@@ -45,7 +55,6 @@ export default function RecordingScreen() {
 
   // Sheet visibility
   const [showNoteSheet, setShowNoteSheet] = useState(false);
-  const [showFolderSheet, setShowFolderSheet] = useState(false);
   const [showFolderSheetDirect, setShowFolderSheetDirect] = useState(false); // For "Into..." flow
 
   // Processing state
@@ -79,7 +88,6 @@ export default function RecordingScreen() {
     // Clear all processing states first
     setShowProcessing(false);
     setSheetProcessing(false);
-    setShowFolderSheet(false);
     setShowFolderSheetDirect(false);
     setShowNoteSheet(false);
 
@@ -121,7 +129,7 @@ export default function RecordingScreen() {
         }),
       ]).start(() => {
         resetState();
-        router.back();
+        safeGoBack();
       });
     }, 1200);
   };
@@ -153,11 +161,14 @@ export default function RecordingScreen() {
   };
 
   // Handle "Add to..." button - open note selection sheet
-  const handleAddToNote = () => {
+  const handleAddToNote = (notes?: string, audioUri?: string | null) => {
     if (!isAuthenticated) {
       Alert.alert('Sign In Required', 'Please sign in to add content to notes.');
       return;
     }
+    // Store the current input for later processing
+    if (notes) setPendingNotes(notes);
+    if (audioUri) setPendingAudioUri(audioUri);
     setShowNoteSheet(true);
   };
 
@@ -170,11 +181,14 @@ export default function RecordingScreen() {
   };
 
   // Handle "Into..." button - open folder selection sheet directly
-  const handleIntoFolder = () => {
+  const handleIntoFolder = (notes?: string, audioUri?: string | null) => {
     if (!isAuthenticated) {
       Alert.alert('Sign In Required', 'Please sign in to save notes.');
       return;
     }
+    // Store the current input for later processing
+    if (notes) setPendingNotes(notes);
+    if (audioUri) setPendingAudioUri(audioUri);
     setShowFolderSheetDirect(true);
   };
 
@@ -197,7 +211,7 @@ export default function RecordingScreen() {
       Alert.alert(
         'Sign In Required',
         'Please sign in to process notes with AI.',
-        [{ text: 'OK', onPress: () => router.back() }]
+        [{ text: 'OK', onPress: () => safeGoBack() }]
       );
       return;
     }
@@ -208,11 +222,7 @@ export default function RecordingScreen() {
       await processToExistingNote(notes, finalAudioUri);
     } else if (flowMode === 'into-folder' && targetFolder) {
       // Process directly to target folder
-      setPendingNotes(notes || '');
-      if (finalAudioUri) {
-        setPendingAudioUri(finalAudioUri);
-      }
-      await processNoteWithFolder(targetFolder.id);
+      await processNoteWithFolder(targetFolder.id, false, notes, finalAudioUri);
     } else if (folderId) {
       // Coming from a specific folder context
       setShowProcessing(true);
@@ -237,20 +247,19 @@ export default function RecordingScreen() {
         setShowProcessing(false);
         Alert.alert('Processing Failed', apiError || 'Unknown error', [
           { text: 'Try Again' },
-          { text: 'Discard', style: 'destructive', onPress: () => router.back() },
+          { text: 'Discard', style: 'destructive', onPress: () => safeGoBack() },
         ]);
       }
     } else {
-      // Quick capture flow - show folder selection sheet
-      setPendingNotes(notes || '');
-      if (finalAudioUri) {
-        setPendingAudioUri(finalAudioUri);
-      }
-      setShowFolderSheet(true);
+      // Quick capture flow - auto-save with AI sorting (no folder selection modal)
+      // Process directly - backend will auto-sort when no folderId is provided
+      await processNoteWithFolder(undefined, true, notes, finalAudioUri);
     }
   };
 
   // Process to an existing note (add content)
+  // Default behavior: transcribe audio and append to note (no AI re-synthesis)
+  // User can explicitly choose to combine/summarize later from the note detail view
   const processToExistingNote = async (notes: string, audioUri?: string | null) => {
     if (!targetNote) return;
 
@@ -262,7 +271,8 @@ export default function RecordingScreen() {
         {
           textInput: notes || undefined,
           audioUri: audioUri || undefined,
-          autoDecide: true,
+          resynthesize: false,  // Just append, don't re-synthesize
+          autoDecide: false,    // Don't let AI decide - user controls this
         },
         (progress, status) => {
           // Could update status here
@@ -283,10 +293,6 @@ export default function RecordingScreen() {
       setShowProcessing(false);
       Alert.alert('Error', 'Failed to add content to note');
     }
-  };
-
-  const handleFolderSelected = async (selectedFolderId: string) => {
-    await processNoteWithFolder(selectedFolderId);
   };
 
   const handleAutoSort = async () => {
@@ -337,16 +343,26 @@ export default function RecordingScreen() {
     );
   };
 
-  const processNoteWithFolder = async (selectedFolderId?: string, autoSort: boolean = false) => {
+  const processNoteWithFolder = async (
+    selectedFolderId?: string,
+    autoSort: boolean = false,
+    notesText?: string,
+    audioUri?: string | null
+  ) => {
     setSheetProcessing(true);
+    setShowProcessing(true);
     setSheetProcessingStatus(autoSort ? 'AI is analyzing your note...' : 'Processing...');
+
+    // Use passed values directly, fall back to state
+    const textToUse = notesText ?? pendingNotes;
+    const audioToUse = audioUri ?? pendingAudioUri;
 
     try {
       // Use the new synthesis endpoint for both audio+text and text-only
       const { data, error: apiError } = await voiceService.synthesizeNote(
         {
-          textInput: pendingNotes || undefined,
-          audioUri: pendingAudioUri || undefined,
+          textInput: textToUse || undefined,
+          audioUri: audioToUse || undefined,
           folderId: autoSort ? undefined : selectedFolderId,
         },
         (progress, status) => setSheetProcessingStatus(status)
@@ -360,7 +376,9 @@ export default function RecordingScreen() {
 
       // Success - show animation and go back
       fetchFolders();
-      showSuccessAndNavigateBack('Note saved');
+      const folderName = data?.folder_name;
+      const successMsg = folderName ? `Saved to ${folderName}` : 'Note saved';
+      showSuccessAndNavigateBack(successMsg);
     } catch (err) {
       Alert.alert('Error', 'Failed to process note.');
       setSheetProcessing(false);
@@ -379,7 +397,7 @@ export default function RecordingScreen() {
             style: 'destructive',
             onPress: async () => {
               await cancelRecording();
-              router.back();
+              safeGoBack();
             },
           },
         ]
@@ -395,13 +413,13 @@ export default function RecordingScreen() {
             style: 'destructive',
             onPress: () => {
               resetState();
-              router.back();
+              safeGoBack();
             },
           },
         ]
       );
     } else {
-      router.back();
+      safeGoBack();
     }
   };
 
@@ -495,17 +513,6 @@ export default function RecordingScreen() {
         visible={showNoteSheet}
         onSelectNote={handleNoteSelected}
         onClose={() => setShowNoteSheet(false)}
-      />
-
-      {/* Folder Selection Sheet (for quick capture flow) */}
-      <FolderSelectionSheet
-        visible={showFolderSheet}
-        onSelectFolder={handleFolderSelected}
-        onAutoSort={handleAutoSort}
-        onCreateFolder={handleCreateFolder}
-        onClose={() => setShowFolderSheet(false)}
-        isProcessing={sheetProcessing}
-        processingStatus={sheetProcessingStatus}
       />
 
       {/* Folder Selection Sheet (for "Into..." flow - direct folder selection) */}
