@@ -1,19 +1,21 @@
 /**
  * useNoteDetail Hook
+ *
+ * Fetches and manages a single note using TanStack Query for SWR caching.
  */
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { useNoteDetailQuery, useUpdateNoteMutation, useDeleteNoteMutation, queryKeys } from '@/hooks/queries';
 import { notesService, NoteDetailResponse } from '@/services/notes';
 import { actionsService, ActionExecuteResponse } from '@/services/actions';
-import { voiceService, VoiceProcessingResponse, SynthesisResponse, InputHistoryEntry, UpdateDecision } from '@/services/voice';
+import { voiceService, InputHistoryEntry, UpdateDecision } from '@/services/voice';
 import { Note } from '@/data/types';
 import { useNotes } from '@/context/NotesContext';
 
 export function useNoteDetail(noteId: string | undefined) {
+  const queryClient = useQueryClient();
   const { getCachedNote, clearCachedNote } = useNotes();
-  const [rawNote, setRawNote] = useState<NoteDetailResponse | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
   // Append audio state
   const [isAppending, setIsAppending] = useState(false);
@@ -21,66 +23,56 @@ export function useNoteDetail(noteId: string | undefined) {
   const [appendStatus, setAppendStatus] = useState('');
   const [lastDecision, setLastDecision] = useState<UpdateDecision | null>(null);
 
-  const fetchNote = useCallback(async () => {
-    if (!noteId) {
-      setIsLoading(false);
-      return;
-    }
+  // Use TanStack Query for note fetching
+  const {
+    data: rawNote,
+    isLoading,
+    error: queryError,
+    refetch,
+  } = useNoteDetailQuery(noteId);
 
-    // Check cache first for instant display
-    const cached = getCachedNote(noteId);
-    if (cached) {
-      setRawNote(cached);
-      setIsLoading(false);
-      // Still fetch from API in background to get full data (e.g., actions)
-      const { data } = await notesService.getNote(noteId);
-      if (data) {
-        setRawNote(data);
-        clearCachedNote(noteId);
-      }
-      return;
-    }
+  // Check cache first for instant display (for newly created notes)
+  const cachedNote = noteId ? getCachedNote(noteId) : null;
+  const displayNote = cachedNote || rawNote || null;
 
-    setIsLoading(true);
-    setError(null);
+  // Clear cache once we have fresh data from API
+  if (rawNote && cachedNote && noteId) {
+    clearCachedNote(noteId);
+  }
 
-    const { data, error: apiError } = await notesService.getNote(noteId);
-    if (apiError) setError(apiError);
-    else if (data) setRawNote(data);
+  const error = queryError ? (queryError as Error).message : null;
 
-    setIsLoading(false);
-  }, [noteId, getCachedNote, clearCachedNote]);
-
-  useEffect(() => {
-    fetchNote();
-  }, [fetchNote]);
+  // Mutations
+  const updateNoteMutation = useUpdateNoteMutation();
+  const deleteNoteMutation = useDeleteNoteMutation();
 
   const refresh = useCallback(async () => {
-    await fetchNote();
-  }, [fetchNote]);
+    await refetch();
+  }, [refetch]);
 
   const updateNote = useCallback(async (data: { title?: string; transcript?: string; tags?: string[] }): Promise<boolean> => {
     if (!noteId) return false;
-    const { data: updated, error: apiError } = await notesService.updateNote(noteId, data);
-    if (apiError) {
-      setError(apiError);
+    try {
+      await updateNoteMutation.mutateAsync({ noteId, data });
+      return true;
+    } catch {
       return false;
     }
-    if (updated) setRawNote(updated);
-    return true;
-  }, [noteId]);
+  }, [noteId, updateNoteMutation]);
 
   const deleteNote = useCallback(async (): Promise<boolean> => {
     if (!noteId) return false;
-    const { success, error: apiError } = await notesService.deleteNote(noteId);
-    if (apiError) setError(apiError);
-    return success;
-  }, [noteId]);
+    try {
+      await deleteNoteMutation.mutateAsync({ noteId });
+      return true;
+    } catch {
+      return false;
+    }
+  }, [noteId, deleteNoteMutation]);
 
   const executeAction = useCallback(async (actionId: string, service: 'google' | 'apple'): Promise<ActionExecuteResponse | null> => {
     const { data, error: apiError } = await actionsService.executeAction(actionId, service);
     if (apiError) {
-      setError(apiError);
       return null;
     }
     await refresh();
@@ -90,7 +82,6 @@ export function useNoteDetail(noteId: string | undefined) {
   const completeAction = useCallback(async (actionId: string): Promise<boolean> => {
     const { data, error: apiError } = await actionsService.completeAction(actionId);
     if (apiError) {
-      setError(apiError);
       return false;
     }
     await refresh();
@@ -118,7 +109,6 @@ export function useNoteDetail(noteId: string | undefined) {
     setAppendStatus('');
 
     if (apiError) {
-      setError(apiError);
       return false;
     }
 
@@ -161,7 +151,6 @@ export function useNoteDetail(noteId: string | undefined) {
     setAppendStatus('');
 
     if (apiError) {
-      setError(apiError);
       return false;
     }
 
@@ -200,7 +189,6 @@ export function useNoteDetail(noteId: string | undefined) {
     setAppendStatus('');
 
     if (apiError) {
-      setError(apiError);
       return false;
     }
 
@@ -233,7 +221,6 @@ export function useNoteDetail(noteId: string | undefined) {
     setAppendStatus('');
 
     if (apiError) {
-      setError(apiError);
       return false;
     }
 
@@ -242,11 +229,11 @@ export function useNoteDetail(noteId: string | undefined) {
     return true;
   }, [noteId, refresh]);
 
-  const note: Note | null = rawNote ? notesService.convertToNote(rawNote) : null;
+  const note: Note | null = displayNote ? notesService.convertToNote(displayNote) : null;
 
   // Parse input history from AI metadata
   const inputHistory = useMemo((): InputHistoryEntry[] => {
-    const history = rawNote?.ai_metadata?.input_history;
+    const history = displayNote?.ai_metadata?.input_history;
     if (!history || !Array.isArray(history)) return [];
     return history.map((entry: any) => ({
       type: entry.type as 'text' | 'audio',
@@ -255,11 +242,11 @@ export function useNoteDetail(noteId: string | undefined) {
       duration: entry.duration,
       audio_key: entry.audio_key,
     }));
-  }, [rawNote?.ai_metadata?.input_history]);
+  }, [displayNote?.ai_metadata?.input_history]);
 
   return {
     note,
-    rawNote,
+    rawNote: displayNote,
     isLoading,
     error,
     refresh,

@@ -6,10 +6,19 @@ import { StatusBar } from 'expo-status-bar';
 import * as Linking from 'expo-linking';
 import 'react-native-reanimated';
 
+// TanStack Query for SWR caching
+import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
+import { getQueryClient } from '@/lib/queryClient';
+import { asyncStoragePersister } from '@/lib/persister';
+
 import { NotesColors } from '@/constants/theme';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
+import { NetworkProvider } from '@/context/NetworkContext';
 import { NotesProvider } from '@/context/NotesContext';
 import { useNavigationPersistence } from '@/hooks/useNavigationPersistence';
+
+// Initialize query client
+const queryClient = getQueryClient();
 
 // Deep link URL parsing
 const parseDeepLink = (url: string): { action: string; params: Record<string, string> } | null => {
@@ -169,11 +178,18 @@ function RootLayoutNav() {
 
 export default function RootLayout() {
   return (
-    <AuthProvider>
-      <NotesProvider>
-        <RootLayoutNav />
-      </NotesProvider>
-    </AuthProvider>
+    <PersistQueryClientProvider
+      client={queryClient}
+      persistOptions={{ persister: asyncStoragePersister }}
+    >
+      <NetworkProvider>
+        <AuthProvider>
+          <NotesProvider>
+            <RootLayoutNav />
+          </NotesProvider>
+        </AuthProvider>
+      </NetworkProvider>
+    </PersistQueryClientProvider>
   );
 }
 

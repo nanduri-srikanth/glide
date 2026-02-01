@@ -1,18 +1,39 @@
 /**
  * Notes Context
+ *
+ * Provides notes and folders data using TanStack Query for SWR caching.
+ * Data is cached locally and automatically refreshed in the background.
  */
 
-import React, { createContext, useContext, useState, useCallback, ReactNode, useRef } from 'react';
-import { notesService, NoteListItem, FolderResponse, NoteDetailResponse, FolderReorderItem } from '@/services/notes';
+import React, { createContext, useContext, useState, useCallback, ReactNode, useRef, useMemo } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import {
+  useNotesListQuery,
+  useNoteDetailQuery,
+  useFoldersQuery,
+  useUnifiedSearchQuery,
+  useDeleteNoteMutation,
+  useUpdateNoteMutation,
+  useDeleteFolderMutation,
+  useReorderFoldersMutation,
+  useUpdateFolderMutation,
+  queryKeys,
+} from '@/hooks/queries';
+import { NoteListItem, FolderResponse, NoteDetailResponse, FolderReorderItem } from '@/services/notes';
 import { Folder } from '@/data/types';
 
 interface NotesContextType {
+  // Data
   notes: NoteListItem[];
   folders: FolderResponse[];
   isLoading: boolean;
   error: string | null;
+
+  // Selection state
   selectedFolderId: string | null;
   expandedFolderIds: Set<string>;
+
+  // Actions
   fetchNotes: (folderId?: string) => Promise<void>;
   fetchFolders: () => Promise<void>;
   refreshAll: () => Promise<void>;
@@ -21,12 +42,14 @@ interface NotesContextType {
   deleteNote: (noteId: string) => Promise<boolean>;
   moveNote: (noteId: string, folderId: string) => Promise<boolean>;
   deleteFolder: (folderId: string) => Promise<boolean>;
+
   // Folder tree management
   reorderFolders: (updates: FolderReorderItem[]) => Promise<boolean>;
   nestFolder: (folderId: string, parentId: string | null) => Promise<boolean>;
   toggleFolderExpanded: (folderId: string) => void;
   buildFlattenedTree: () => Folder[];
-  // Cache for newly created notes
+
+  // Cache for newly created notes (instant display)
   cacheNote: (note: NoteDetailResponse) => void;
   getCachedNote: (noteId: string) => NoteDetailResponse | null;
   clearCachedNote: (noteId: string) => void;
@@ -35,116 +58,137 @@ interface NotesContextType {
 const NotesContext = createContext<NotesContextType | undefined>(undefined);
 
 export function NotesProvider({ children }: { children: ReactNode }) {
-  const [notes, setNotes] = useState<NoteListItem[]>([]);
-  const [folders, setFolders] = useState<FolderResponse[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+
+  // Local UI state
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [expandedFolderIds, setExpandedFolderIds] = useState<Set<string>>(new Set());
+  const [searchQuery, setSearchQuery] = useState<string>('');
+
   // Cache for newly created notes - use ref to avoid re-renders
   const noteCache = useRef<Map<string, NoteDetailResponse>>(new Map());
 
-  const fetchFolders = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-    const { data, error: apiError } = await notesService.listFolders();
-    if (apiError) setError(apiError);
-    else if (data) setFolders(data);
-    setIsLoading(false);
-  }, []);
+  // TanStack Query hooks - data is automatically cached and refreshed
+  const notesQuery = useNotesListQuery({
+    folder_id: selectedFolderId || undefined,
+    per_page: 50,
+  });
 
+  const foldersQuery = useFoldersQuery();
+
+  const searchQueryResult = useUnifiedSearchQuery(searchQuery, searchQuery.length > 0);
+
+  // Mutations
+  const deleteNoteMutation = useDeleteNoteMutation();
+  const updateNoteMutation = useUpdateNoteMutation();
+  const deleteFolderMutation = useDeleteFolderMutation();
+  const reorderFoldersMutation = useReorderFoldersMutation();
+  const updateFolderMutation = useUpdateFolderMutation();
+
+  // Derived state
+  const notes = useMemo(() => {
+    if (searchQuery && searchQueryResult.data) {
+      return searchQueryResult.data.notes;
+    }
+    return notesQuery.data?.items || [];
+  }, [searchQuery, searchQueryResult.data, notesQuery.data]);
+
+  const folders = foldersQuery.data || [];
+
+  const isLoading = notesQuery.isLoading || foldersQuery.isLoading || searchQueryResult.isLoading;
+
+  const error = useMemo(() => {
+    if (notesQuery.error) return (notesQuery.error as Error).message;
+    if (foldersQuery.error) return (foldersQuery.error as Error).message;
+    if (searchQueryResult.error) return (searchQueryResult.error as Error).message;
+    return null;
+  }, [notesQuery.error, foldersQuery.error, searchQueryResult.error]);
+
+  // Actions - these now just trigger refetches or update local state
   const fetchNotes = useCallback(async (folderId?: string) => {
-    setIsLoading(true);
-    setError(null);
-    // Clear existing notes to prevent showing stale data from another folder
-    setNotes([]);
-    const { data, error: apiError } = await notesService.listNotes({ folder_id: folderId, per_page: 50 });
-    if (apiError) setError(apiError);
-    else if (data) setNotes(data.items);
-    setIsLoading(false);
-  }, []);
+    if (folderId !== undefined) {
+      setSelectedFolderId(folderId || null);
+    }
+    // TanStack Query will automatically refetch when selectedFolderId changes
+    // For manual refresh:
+    await queryClient.invalidateQueries({ queryKey: queryKeys.notes.lists() });
+  }, [queryClient]);
+
+  const fetchFolders = useCallback(async () => {
+    await queryClient.invalidateQueries({ queryKey: queryKeys.folders.all });
+  }, [queryClient]);
 
   const refreshAll = useCallback(async () => {
-    await Promise.all([fetchFolders(), fetchNotes(selectedFolderId || undefined)]);
-  }, [fetchFolders, fetchNotes, selectedFolderId]);
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: queryKeys.notes.lists() }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.folders.all }),
+    ]);
+  }, [queryClient]);
 
   const selectFolder = useCallback((folderId: string | null) => {
     setSelectedFolderId(folderId);
+    setSearchQuery(''); // Clear search when selecting folder
   }, []);
 
   const searchNotes = useCallback(async (query: string) => {
+    setSearchQuery(query);
+    // If empty query, clear search and return to folder view
     if (!query.trim()) {
-      await fetchNotes(selectedFolderId || undefined);
-      return;
+      setSearchQuery('');
     }
-    setIsLoading(true);
-    setError(null);
-    const { data, error: apiError } = await notesService.searchNotes(query);
-    if (apiError) setError(apiError);
-    else if (data) setNotes(data.items);
-    setIsLoading(false);
-  }, [selectedFolderId, fetchNotes]);
-
-  const deleteNote = useCallback(async (noteId: string) => {
-    const { success, error: apiError } = await notesService.deleteNote(noteId);
-    if (success) {
-      setNotes(prev => prev.filter(n => n.id !== noteId));
-      noteCache.current.delete(noteId);
-      fetchFolders();
-    } else if (apiError) setError(apiError);
-    return success;
-  }, [fetchFolders]);
-
-  const moveNote = useCallback(async (noteId: string, folderId: string) => {
-    const { data, error: apiError } = await notesService.updateNote(noteId, { folder_id: folderId });
-    if (data) {
-      // Update local state
-      setNotes(prev => prev.filter(n => n.id !== noteId));
-      fetchFolders();
-      return true;
-    }
-    if (apiError) setError(apiError);
-    return false;
-  }, [fetchFolders]);
-
-  const deleteFolder = useCallback(async (folderId: string) => {
-    const { success, error: apiError } = await notesService.deleteFolder(folderId);
-    if (success) {
-      // Remove folder and its children from the tree
-      const removeFromTree = (folders: FolderResponse[]): FolderResponse[] => {
-        return folders
-          .filter(f => f.id !== folderId)
-          .map(f => ({
-            ...f,
-            children: f.children ? removeFromTree(f.children) : [],
-          }));
-      };
-      setFolders(prev => removeFromTree(prev));
-      return true;
-    }
-    if (apiError) setError(apiError);
-    return false;
   }, []);
 
-  const reorderFolders = useCallback(async (updates: FolderReorderItem[]) => {
-    const { success, error: apiError } = await notesService.reorderFolders(updates);
-    if (success) {
-      await fetchFolders();
+  const deleteNote = useCallback(async (noteId: string): Promise<boolean> => {
+    try {
+      await deleteNoteMutation.mutateAsync({ noteId });
+      noteCache.current.delete(noteId);
       return true;
+    } catch {
+      return false;
     }
-    if (apiError) setError(apiError);
-    return false;
-  }, [fetchFolders]);
+  }, [deleteNoteMutation]);
 
-  const nestFolder = useCallback(async (folderId: string, parentId: string | null) => {
-    const { data, error: apiError } = await notesService.updateFolder(folderId, { parent_id: parentId });
-    if (data) {
-      await fetchFolders();
+  const moveNote = useCallback(async (noteId: string, folderId: string): Promise<boolean> => {
+    try {
+      await updateNoteMutation.mutateAsync({
+        noteId,
+        data: { folder_id: folderId },
+      });
       return true;
+    } catch {
+      return false;
     }
-    if (apiError) setError(apiError);
-    return false;
-  }, [fetchFolders]);
+  }, [updateNoteMutation]);
+
+  const deleteFolder = useCallback(async (folderId: string): Promise<boolean> => {
+    try {
+      await deleteFolderMutation.mutateAsync(folderId);
+      return true;
+    } catch {
+      return false;
+    }
+  }, [deleteFolderMutation]);
+
+  const reorderFolders = useCallback(async (updates: FolderReorderItem[]): Promise<boolean> => {
+    try {
+      await reorderFoldersMutation.mutateAsync(updates);
+      return true;
+    } catch {
+      return false;
+    }
+  }, [reorderFoldersMutation]);
+
+  const nestFolder = useCallback(async (folderId: string, parentId: string | null): Promise<boolean> => {
+    try {
+      await updateFolderMutation.mutateAsync({
+        folderId,
+        data: { parent_id: parentId },
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }, [updateFolderMutation]);
 
   const toggleFolderExpanded = useCallback((folderId: string) => {
     setExpandedFolderIds(prev => {
@@ -193,22 +237,52 @@ export function NotesProvider({ children }: { children: ReactNode }) {
   // Cache functions for instant note display
   const cacheNote = useCallback((note: NoteDetailResponse) => {
     noteCache.current.set(note.id, note);
-    // Auto-clear cache after 30 seconds
+    // Also update the TanStack Query cache
+    queryClient.setQueryData(queryKeys.notes.detail(note.id), note);
+    // Auto-clear local cache after 30 seconds
     setTimeout(() => {
       noteCache.current.delete(note.id);
     }, 30000);
-  }, []);
+  }, [queryClient]);
 
   const getCachedNote = useCallback((noteId: string) => {
-    return noteCache.current.get(noteId) || null;
-  }, []);
+    // First check local cache
+    const localCached = noteCache.current.get(noteId);
+    if (localCached) return localCached;
+    // Then check TanStack Query cache
+    return queryClient.getQueryData<NoteDetailResponse>(queryKeys.notes.detail(noteId)) || null;
+  }, [queryClient]);
 
   const clearCachedNote = useCallback((noteId: string) => {
     noteCache.current.delete(noteId);
   }, []);
 
+  const value: NotesContextType = {
+    notes,
+    folders,
+    isLoading,
+    error,
+    selectedFolderId,
+    expandedFolderIds,
+    fetchNotes,
+    fetchFolders,
+    refreshAll,
+    selectFolder,
+    searchNotes,
+    deleteNote,
+    moveNote,
+    deleteFolder,
+    reorderFolders,
+    nestFolder,
+    toggleFolderExpanded,
+    buildFlattenedTree,
+    cacheNote,
+    getCachedNote,
+    clearCachedNote,
+  };
+
   return (
-    <NotesContext.Provider value={{ notes, folders, isLoading, error, selectedFolderId, expandedFolderIds, fetchNotes, fetchFolders, refreshAll, selectFolder, searchNotes, deleteNote, moveNote, deleteFolder, reorderFolders, nestFolder, toggleFolderExpanded, buildFlattenedTree, cacheNote, getCachedNote, clearCachedNote }}>
+    <NotesContext.Provider value={value}>
       {children}
     </NotesContext.Provider>
   );
@@ -216,7 +290,9 @@ export function NotesProvider({ children }: { children: ReactNode }) {
 
 export function useNotes() {
   const context = useContext(NotesContext);
-  if (context === undefined) throw new Error('useNotes must be used within a NotesProvider');
+  if (context === undefined) {
+    throw new Error('useNotes must be used within a NotesProvider');
+  }
   return context;
 }
 
