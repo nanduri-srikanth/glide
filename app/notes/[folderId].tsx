@@ -22,6 +22,7 @@ import { UnifiedSearchOverlay } from '@/components/notes/UnifiedSearchOverlay';
 import { Note } from '@/data/types';
 import { useNotes } from '@/context/NotesContext';
 import { useAuth } from '@/context/AuthContext';
+import { notesService } from '@/services/notes';
 
 interface Section {
   title: string;
@@ -38,6 +39,7 @@ export default function NoteListScreen() {
   const [showSearchOverlay, setShowSearchOverlay] = useState(false);
   const [noteToMove, setNoteToMove] = useState<string | null>(null);
   const [isMoving, setIsMoving] = useState(false);
+  const [moveProcessingStatus, setMoveProcessingStatus] = useState('');
 
   const apiFolder = folders.find((f) => f.id === folderId);
   const mockFolder = mockFolders.find((f) => f.id === folderId);
@@ -179,8 +181,10 @@ export default function NoteListScreen() {
     if (!noteToMove) return;
 
     setIsMoving(true);
+    setMoveProcessingStatus('Moving note...');
     const success = await moveNote(noteToMove, targetFolderId);
     setIsMoving(false);
+    setMoveProcessingStatus('');
 
     if (success) {
       setShowMoveSheet(false);
@@ -193,6 +197,36 @@ export default function NoteListScreen() {
       Alert.alert('Error', 'Failed to move note. Please try again.');
     }
   }, [noteToMove, moveNote, isAuthenticated, folderId, isAllNotesFolder, fetchNotes]);
+
+  const handleAutoSort = useCallback(async () => {
+    if (!noteToMove) return;
+
+    setIsMoving(true);
+    setMoveProcessingStatus('AI is analyzing your note...');
+
+    const { data, error } = await notesService.autoSortNote(noteToMove);
+
+    setIsMoving(false);
+    setMoveProcessingStatus('');
+
+    if (data) {
+      const folderName = data.folder_name;
+      setShowMoveSheet(false);
+      setNoteToMove(null);
+
+      // Show where the note was moved
+      if (folderName) {
+        Alert.alert('Note Moved', `Moved to "${folderName}"`);
+      }
+
+      // Refresh the current list
+      if (isAuthenticated && folderId) {
+        await fetchNotes(isAllNotesFolder ? undefined : folderId);
+      }
+    } else {
+      Alert.alert('Error', error || 'Failed to auto-sort note. Please try again.');
+    }
+  }, [noteToMove, isAuthenticated, folderId, isAllNotesFolder, fetchNotes]);
 
   const renderSectionHeader = ({ section }: { section: Section }) => (
     <View style={styles.sectionHeader}>
@@ -264,11 +298,13 @@ export default function NoteListScreen() {
           visible={showMoveSheet}
           currentFolderId={folderId}
           onSelectFolder={handleSelectMoveFolder}
+          onAutoSort={handleAutoSort}
           onClose={() => {
             setShowMoveSheet(false);
             setNoteToMove(null);
           }}
           isProcessing={isMoving}
+          processingStatus={moveProcessingStatus}
         />
       </SafeAreaView>
     </GestureHandlerRootView>

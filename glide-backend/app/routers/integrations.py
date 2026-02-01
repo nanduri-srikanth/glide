@@ -13,6 +13,7 @@ from app.database import get_db
 from app.models.user import User
 from app.routers.auth import get_current_user
 from app.config import get_settings
+from app.utils import encrypt_token, decrypt_token
 
 router = APIRouter()
 settings = get_settings()
@@ -126,9 +127,9 @@ async def google_callback(
                 detail="User not found"
             )
 
-        # Store tokens
-        user.google_access_token = tokens.get("access_token")
-        user.google_refresh_token = tokens.get("refresh_token")
+        # Store tokens (encrypted)
+        user.google_access_token = encrypt_token(tokens.get("access_token"))
+        user.google_refresh_token = encrypt_token(tokens.get("refresh_token"))
 
         # Calculate expiry
         expires_in = tokens.get("expires_in", 3600)
@@ -188,9 +189,9 @@ async def apple_connect(
         if not calendars:
             raise ValueError("No calendars found")
 
-        # Store credentials
+        # Store credentials (encrypted)
         current_user.apple_caldav_username = username
-        current_user.apple_caldav_password = app_password  # Should be encrypted
+        current_user.apple_caldav_password = encrypt_token(app_password)
         await db.commit()
 
         return {
@@ -235,8 +236,8 @@ async def test_google_connection(
         from app.services.google_services import GoogleCalendarService
 
         service = GoogleCalendarService(
-            access_token=current_user.google_access_token,
-            refresh_token=current_user.google_refresh_token,
+            access_token=decrypt_token(current_user.google_access_token),
+            refresh_token=decrypt_token(current_user.google_refresh_token),
         )
 
         events = await service.list_events(max_results=5)
@@ -273,7 +274,7 @@ async def test_apple_connection(
 
         service = AppleCalendarService(
             username=current_user.apple_caldav_username,
-            app_password=current_user.apple_caldav_password,
+            app_password=decrypt_token(current_user.apple_caldav_password),
         )
 
         calendars = service.calendars

@@ -13,6 +13,7 @@ from app.models.user import User
 from app.models.note import Note, Folder
 from app.models.action import Action, ActionType
 from app.routers.auth import get_current_user
+from app.services.llm import LLMService
 from app.schemas.note_schemas import (
     NoteCreate,
     NoteUpdate,
@@ -480,3 +481,102 @@ async def restore_note(
     if note.folder:
         response.folder_name = note.folder.name
     return response
+
+
+@router.post("/{note_id}/auto-sort", response_model=NoteResponse)
+async def auto_sort_note(
+    note_id: UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Auto-sort a note using AI to determine the best folder.
+
+    This analyzes the note's content and moves it to the most appropriate folder
+    based on the user's existing folders.
+    """
+    # Get the note
+    result = await db.execute(
+        select(Note)
+        .options(selectinload(Note.actions))
+        .where(Note.id == note_id)
+        .where(Note.user_id == current_user.id)
+        .where(Note.is_deleted == False)
+    )
+    note = result.scalar_one_or_none()
+
+    if not note:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Note not found"
+        )
+
+    try:
+        # Fetch user's folders for smart categorization
+        folders_result = await db.execute(
+            select(Folder.name)
+            .where(Folder.user_id == current_user.id)
+            .where(Folder.is_system == False)
+            .order_by(Folder.sort_order)
+        )
+        user_folders = [row[0] for row in folders_result.fetchall()]
+        if not user_folders:
+            user_folders = ['Work', 'Personal', 'Ideas']
+
+        # Use LLM to suggest folder
+        llm_service = LLMService()
+        user_context = {
+            "timezone": current_user.timezone,
+            "current_date": datetime.utcnow().strftime("%Y-%m-%d"),
+            "folders": user_folders,
+        }
+
+        extraction = await llm_service.extract_actions(
+            transcript=note.transcript or note.title,
+            user_context=user_context,
+        )
+
+        # Find or create the suggested folder
+        suggested_folder = extraction.folder
+        result = await db.execute(
+            select(Folder)
+            .where(Folder.user_id == current_user.id)
+            .where(Folder.name == suggested_folder)
+        )
+        folder = result.scalar_one_or_none()
+
+        if not folder:
+            # Create the folder if it doesn't exist
+            folder = Folder(
+                user_id=current_user.id,
+                name=suggested_folder,
+                icon="folder.fill",
+            )
+            db.add(folder)
+            await db.flush()
+
+        # Move the note to the suggested folder
+        note.folder_id = folder.id
+        note.updated_at = datetime.utcnow()
+
+        await db.commit()
+
+        # Re-fetch with folder relationship
+        result = await db.execute(
+            select(Note)
+            .options(selectinload(Note.actions), selectinload(Note.folder))
+            .where(Note.id == note.id)
+        )
+        note = result.scalar_one()
+
+        response = NoteResponse.model_validate(note)
+        if note.folder:
+            response.folder_name = note.folder.name
+        return response
+
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to auto-sort note: {str(e)}"
+        )

@@ -46,7 +46,10 @@ export function useNavigationPersistence(isReady: boolean = true) {
     try {
       const savedRoute = await AsyncStorage.getItem(NAVIGATION_STATE_KEY);
 
-      if (savedRoute && !NON_RESTORABLE_ROUTES.some(r => savedRoute.startsWith(r))) {
+      // Don't restore routes to specific notes/details (they may not exist after DB change)
+      if (savedRoute &&
+          !NON_RESTORABLE_ROUTES.some(r => savedRoute.startsWith(r)) &&
+          !savedRoute.includes('/detail/')) {
         // Small delay to ensure navigation is ready
         setTimeout(() => {
           router.replace(savedRoute as any);

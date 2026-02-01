@@ -13,6 +13,7 @@ from app.models.action import Action, ActionType, ActionStatus
 from app.routers.auth import get_current_user
 from app.services.google_services import GoogleCalendarService, GmailService
 from app.services.apple_services import AppleCalendarService, AppleRemindersService
+from app.utils import decrypt_token
 from app.schemas.action_schemas import (
     ActionResponse,
     ActionUpdate,
@@ -218,8 +219,8 @@ async def _execute_calendar_action(action: Action, user: User, service: str) -> 
             raise ValueError("Google Calendar not connected")
 
         calendar_service = GoogleCalendarService(
-            access_token=user.google_access_token,
-            refresh_token=user.google_refresh_token,
+            access_token=decrypt_token(user.google_access_token),
+            refresh_token=decrypt_token(user.google_refresh_token),
         )
 
         return await calendar_service.create_event(
@@ -238,7 +239,7 @@ async def _execute_calendar_action(action: Action, user: User, service: str) -> 
 
         calendar_service = AppleCalendarService(
             username=user.apple_caldav_username,
-            app_password=user.apple_caldav_password,
+            app_password=decrypt_token(user.apple_caldav_password),
         )
 
         return await calendar_service.create_event(
@@ -262,8 +263,8 @@ async def _execute_email_action(action: Action, user: User, service: str) -> dic
         raise ValueError("Gmail not connected")
 
     gmail_service = GmailService(
-        access_token=user.google_access_token,
-        refresh_token=user.google_refresh_token,
+        access_token=decrypt_token(user.google_access_token),
+        refresh_token=decrypt_token(user.google_refresh_token),
     )
 
     return await gmail_service.create_draft(
@@ -281,7 +282,7 @@ async def _execute_reminder_action(action: Action, user: User, service: str) -> 
 
         reminders_service = AppleRemindersService(
             username=user.apple_caldav_username,
-            app_password=user.apple_caldav_password,
+            app_password=decrypt_token(user.apple_caldav_password),
         )
 
         priority = 5  # medium

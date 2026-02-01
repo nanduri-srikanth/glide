@@ -14,20 +14,18 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # Local development mode
-    use_sqlite: bool = True  # Use SQLite for local dev (set to False for PostgreSQL)
-    use_local_storage: bool = True  # Use local filesystem instead of S3
+    # Storage mode
+    use_local_storage: bool = False  # Use Supabase Storage (set True for local filesystem)
 
     # API Keys (optional - mock responses used when not configured)
-    openai_api_key: str = ""
-    anthropic_api_key: str = ""
     groq_api_key: str = ""  # Groq for fast Whisper transcription and LLM inference
 
-    # Supabase (optional for local dev)
+    # Supabase
     supabase_url: str = ""
     supabase_anon_key: str = ""
+    supabase_service_role_key: str = ""  # For server-side storage access
 
-    # Database - defaults to SQLite for local dev
+    # Database
     database_url: str = ""
 
     @property
@@ -35,20 +33,13 @@ class Settings(BaseSettings):
         """Return async database URL."""
         if self.database_url:
             return self.database_url
-        if self.use_sqlite:
-            return "sqlite+aiosqlite:///./glide.db"
         return "postgresql+asyncpg://postgres:password@localhost:5432/glide"
 
     @property
     def database_url_sync(self) -> str:
         """Return sync database URL for Alembic."""
         url = self.database_url_async
-        return url.replace("+asyncpg", "").replace("+aiosqlite", "")
-
-    @property
-    def is_sqlite(self) -> bool:
-        """Check if using SQLite."""
-        return "sqlite" in self.database_url_async
+        return url.replace("+asyncpg", "")
 
     # Local storage path for audio files
     local_storage_path: str = "./uploads"
@@ -61,6 +52,9 @@ class Settings(BaseSettings):
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 7
+
+    # Encryption (for sensitive data at rest)
+    encryption_key: str = ""  # Fernet key for encrypting tokens
 
     # AWS S3
     aws_access_key_id: str = ""

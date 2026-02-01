@@ -21,16 +21,20 @@ interface MoveFolderSheetProps {
   visible: boolean;
   currentFolderId?: string;
   onSelectFolder: (folderId: string) => void;
+  onAutoSort?: () => void;
   onClose: () => void;
   isProcessing?: boolean;
+  processingStatus?: string;
 }
 
 export function MoveFolderSheet({
   visible,
   currentFolderId,
   onSelectFolder,
+  onAutoSort,
   onClose,
   isProcessing = false,
+  processingStatus,
 }: MoveFolderSheetProps) {
   const { folders, fetchFolders } = useNotes();
   const [isLoadingFolders, setIsLoadingFolders] = useState(false);
@@ -132,26 +136,51 @@ export function MoveFolderSheet({
         {isProcessing ? (
           <View style={styles.processingContainer}>
             <ActivityIndicator size="large" color={NotesColors.primary} />
-            <Text style={styles.processingText}>Moving note...</Text>
+            <Text style={styles.processingText}>{processingStatus || 'Moving note...'}</Text>
           </View>
         ) : isLoadingFolders ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="small" color={NotesColors.primary} />
             <Text style={styles.loadingText}>Loading folders...</Text>
           </View>
-        ) : displayFolders.length === 0 ? (
-          <View style={styles.emptyContainer}>
-            <Ionicons name="folder-open-outline" size={48} color={NotesColors.textSecondary} />
-            <Text style={styles.emptyText}>No other folders available</Text>
-          </View>
         ) : (
-          <FlatList
-            data={displayFolders}
-            renderItem={renderFolder}
-            keyExtractor={(item) => item.id}
-            contentContainerStyle={styles.listContent}
-            showsVerticalScrollIndicator={false}
-          />
+          <>
+            {/* Auto-sort option */}
+            {onAutoSort && (
+              <View style={styles.autoSortContainer}>
+                <TouchableOpacity
+                  style={styles.autoSortButton}
+                  onPress={onAutoSort}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.autoSortIcon}>
+                    <Ionicons name="sparkles" size={20} color="#FFD60A" />
+                  </View>
+                  <View style={styles.autoSortText}>
+                    <Text style={styles.autoSortTitle}>Auto-sort with AI</Text>
+                    <Text style={styles.autoSortDescription}>Let AI choose the best folder</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color={NotesColors.textSecondary} />
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {displayFolders.length === 0 ? (
+              <View style={styles.emptyContainer}>
+                <Ionicons name="folder-open-outline" size={48} color={NotesColors.textSecondary} />
+                <Text style={styles.emptyText}>No other folders available</Text>
+              </View>
+            ) : (
+              <FlatList
+                data={displayFolders}
+                renderItem={renderFolder}
+                keyExtractor={(item) => item.id}
+                contentContainerStyle={styles.listContent}
+                showsVerticalScrollIndicator={false}
+                ListHeaderComponent={onAutoSort ? null : undefined}
+              />
+            )}
+          </>
         )}
       </Animated.View>
     </View>
@@ -263,5 +292,41 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 16,
     color: NotesColors.textSecondary,
+  },
+  autoSortContainer: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 8,
+  },
+  autoSortButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 214, 10, 0.1)',
+    padding: 14,
+    borderRadius: 12,
+    gap: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 214, 10, 0.3)',
+  },
+  autoSortIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255, 214, 10, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  autoSortText: {
+    flex: 1,
+  },
+  autoSortTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: NotesColors.textPrimary,
+  },
+  autoSortDescription: {
+    fontSize: 13,
+    color: NotesColors.textSecondary,
+    marginTop: 2,
   },
 });

@@ -53,13 +53,13 @@ export function useLiveActivity() {
     try {
       startTimeRef.current = Date.now();
 
+      // The timer shows elapsed time from startDate
+      // expo-live-activity expects 'date' in progressBar for timer display
       const activityState = {
         title: 'Recording',
         subtitle: '0:00',
         progressBar: {
-          elapsedTimer: {
-            startDate: startTimeRef.current,
-          },
+          date: startTimeRef.current,
         },
       };
 
@@ -97,9 +97,7 @@ export function useLiveActivity() {
               title: 'Recording',
               subtitle: timeString,
               progressBar: {
-                elapsedTimer: {
-                  startDate: startTimeRef.current,
-                },
+                date: startTimeRef.current,
               },
             });
           } catch (e) {
@@ -148,9 +146,7 @@ export function useLiveActivity() {
           title: 'Recording',
           subtitle: timeString,
           progressBar: {
-            elapsedTimer: {
-              startDate: startTimeRef.current,
-            },
+            date: startTimeRef.current,
           },
         });
 
@@ -168,9 +164,7 @@ export function useLiveActivity() {
                   title: 'Recording',
                   subtitle: time,
                   progressBar: {
-                    elapsedTimer: {
-                      startDate: startTimeRef.current,
-                    },
+                    date: startTimeRef.current,
                   },
                 });
               } catch (e) {

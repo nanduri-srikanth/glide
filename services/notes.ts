@@ -162,6 +162,12 @@ class NotesService {
     return { success: true };
   }
 
+  async autoSortNote(noteId: string): Promise<{ data?: NoteDetailResponse; error?: string }> {
+    const response = await api.post<NoteDetailResponse>(`/notes/${noteId}/auto-sort`);
+    if (response.error) return { error: response.error.message };
+    return { data: response.data };
+  }
+
   async searchNotes(query: string, page: number = 1): Promise<{ data?: NoteListResponse; error?: string }> {
     const response = await api.get<NoteListResponse>(`/notes/search?q=${encodeURIComponent(query)}&page=${page}`);
     if (response.error) return { error: response.error.message };

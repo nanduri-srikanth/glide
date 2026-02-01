@@ -17,8 +17,8 @@ config = context.config
 # Load settings
 settings = get_settings()
 
-# Override sqlalchemy.url with actual database URL
-config.set_main_option("sqlalchemy.url", settings.database_url)
+# Override sqlalchemy.url with sync database URL (Alembic doesn't support asyncpg)
+config.set_main_option("sqlalchemy.url", settings.database_url_sync)
 
 # Interpret the config file for Python logging
 if config.config_file_name is not None:

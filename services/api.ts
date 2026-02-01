@@ -4,22 +4,29 @@
 
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 
-// API Configuration
-// For iOS Simulator: use localhost (maps to host machine)
-// For Android Emulator: use 10.0.2.2 (maps to host machine)
-// For Physical devices: use your machine's local IP
-const LOCAL_IP = '192.168.1.6'; // Your machine's local IP for physical devices
-
+// API Configuration - automatically detects the correct host
 const getDevHost = () => {
-  // Use local IP for physical devices (both iOS and Android)
-  // Change to 'localhost' for iOS Simulator or '10.0.2.2' for Android Emulator
-  return LOCAL_IP;
+  // Expo Go provides the dev server address which has the correct IP
+  const expoHost = Constants.expoGoConfig?.debuggerHost ?? Constants.manifest2?.extra?.expoGo?.debuggerHost;
+  if (expoHost) {
+    // debuggerHost is "192.168.x.x:8081" - extract just the IP
+    return expoHost.split(':')[0];
+  }
+  // Fallback for simulators/emulators
+  if (Platform.OS === 'android') {
+    return '10.0.2.2'; // Android emulator localhost alias
+  }
+  return 'localhost'; // iOS Simulator
 };
 
 export const API_BASE_URL = __DEV__
   ? `http://${getDevHost()}:8000/api/v1`  // Development
   : 'https://your-production-api.com/api/v1';  // Production
+
+// Debug: Log the API URL on startup
+console.log('[API] Base URL:', API_BASE_URL);
 
 // Token storage keys
 const ACCESS_TOKEN_KEY = 'glide_access_token';

@@ -32,8 +32,8 @@ interface RecordingOverlayProps {
   onResumeRecording: () => void;
   onCancel: () => void;
   onProcess: (notes: string, audioUri?: string | null) => void;
-  onAddToNote?: () => void;
-  onIntoFolder?: () => void;
+  onAddToNote?: (notes: string, audioUri?: string | null) => void;
+  onIntoFolder?: (notes: string, audioUri?: string | null) => void;
 }
 
 // Animated wave bar component
@@ -375,7 +375,7 @@ export function RecordingOverlay({
           <View style={styles.secondaryActions}>
             <TouchableOpacity
               style={styles.secondaryButton}
-              onPress={onAddToNote}
+              onPress={() => onAddToNote(notes, savedAudioUri || recordingUri)}
               activeOpacity={0.7}
             >
               <Ionicons name="attach" size={18} color={NotesColors.primary} />
@@ -383,7 +383,7 @@ export function RecordingOverlay({
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.secondaryButton}
-              onPress={onIntoFolder}
+              onPress={() => onIntoFolder(notes, savedAudioUri || recordingUri)}
               activeOpacity={0.7}
             >
               <Ionicons name="folder-outline" size={18} color={NotesColors.primary} />

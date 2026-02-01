@@ -7,6 +7,7 @@ from app.utils.auth import (
     verify_token,
 )
 from app.utils.audio import convert_audio, get_audio_duration
+from app.utils.encryption import encrypt_token, decrypt_token, get_encryption_service
 
 __all__ = [
     "create_access_token",
@@ -16,4 +17,7 @@ __all__ = [
     "verify_token",
     "convert_audio",
     "get_audio_duration",
+    "encrypt_token",
+    "decrypt_token",
+    "get_encryption_service",
 ]
