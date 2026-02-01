@@ -1,5 +1,5 @@
 /**
- * useNoteDetail Hook - Offline-first with local DB
+ * useNoteDetail Hook
  */
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
@@ -8,14 +8,9 @@ import { actionsService, ActionExecuteResponse } from '@/services/actions';
 import { voiceService, VoiceProcessingResponse, SynthesisResponse, InputHistoryEntry, UpdateDecision } from '@/services/voice';
 import { Note } from '@/data/types';
 import { useNotes } from '@/context/NotesContext';
-import { notesRepository, localNoteToNote } from '@/services/repositories/NotesRepository';
-import { useSync } from '@/context/SyncContext';
-import { useNetwork } from '@/context/NetworkContext';
 
 export function useNoteDetail(noteId: string | undefined) {
   const { getCachedNote, clearCachedNote } = useNotes();
-  const { isInitialized, isHydrated } = useSync();
-  const { isOnline } = useNetwork();
   const [rawNote, setRawNote] = useState<NoteDetailResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -25,26 +20,6 @@ export function useNoteDetail(noteId: string | undefined) {
   const [appendProgress, setAppendProgress] = useState(0);
   const [appendStatus, setAppendStatus] = useState('');
   const [lastDecision, setLastDecision] = useState<UpdateDecision | null>(null);
-
-  // Helper to store note in local DB
-  const storeNoteLocally = useCallback(async (data: NoteDetailResponse) => {
-    try {
-      await notesRepository.upsertFromServer({
-        id: data.id,
-        title: data.title,
-        transcript: data.transcript,
-        summary: data.summary || undefined,
-        duration: data.duration || undefined,
-        folderId: data.folder_id || undefined,
-        tags: data.tags,
-        createdAt: data.created_at,
-        updatedAt: data.updated_at || data.created_at,
-      });
-      console.log('[useNoteDetail] Stored note in local DB:', data.id);
-    } catch (err) {
-      console.error('[useNoteDetail] Failed to store note locally:', err);
-    }
-  }, []);
 
   const fetchNote = useCallback(async () => {
     if (!noteId) {
@@ -58,14 +33,10 @@ export function useNoteDetail(noteId: string | undefined) {
       setRawNote(cached);
       setIsLoading(false);
       // Still fetch from API in background to get full data (e.g., actions)
-      if (isOnline) {
-        const { data } = await notesService.getNote(noteId);
-        if (data) {
-          setRawNote(data);
-          clearCachedNote(noteId);
-          // Write-through: store in local DB
-          await storeNoteLocally(data);
-        }
+      const { data } = await notesService.getNote(noteId);
+      if (data) {
+        setRawNote(data);
+        clearCachedNote(noteId);
       }
       return;
     }
@@ -73,60 +44,12 @@ export function useNoteDetail(noteId: string | undefined) {
     setIsLoading(true);
     setError(null);
 
-    // Try local DB first if initialized
-    if (isInitialized) {
-      const localNote = await notesRepository.getNoteById(noteId);
-      if (localNote) {
-        // Convert local note to NoteDetailResponse format
-        const localNoteDetail: NoteDetailResponse = {
-          id: localNote.serverId || localNote.id,
-          title: localNote.title,
-          transcript: localNote.transcript || '',
-          summary: localNote.summary || null,
-          duration: localNote.duration ?? null,
-          folder_id: localNote.folderId || null,
-          folder_name: '',
-          tags: localNote.tags,
-          is_pinned: localNote.isPinned,
-          is_archived: localNote.isArchived,
-          ai_processed: true,
-          audio_url: localNote.audioUrl || null,
-          actions: [],
-          ai_metadata: undefined,
-          created_at: localNote.createdAt,
-          updated_at: localNote.updatedAt,
-        };
-        setRawNote(localNoteDetail);
-        setIsLoading(false);
-
-        // If online, fetch from server in background for complete data (actions, etc.)
-        if (isOnline) {
-          const { data } = await notesService.getNote(noteId);
-          if (data) {
-            setRawNote(data);
-            // Write-through: update local DB with full server data
-            await storeNoteLocally(data);
-          }
-        }
-        return;
-      }
-    }
-
-    // Fetch from server if not found locally (or not initialized)
-    if (isOnline) {
-      const { data, error: apiError } = await notesService.getNote(noteId);
-      if (apiError) setError(apiError);
-      else if (data) {
-        setRawNote(data);
-        // Write-through: store in local DB
-        await storeNoteLocally(data);
-      }
-    } else {
-      setError('Note not available offline');
-    }
+    const { data, error: apiError } = await notesService.getNote(noteId);
+    if (apiError) setError(apiError);
+    else if (data) setRawNote(data);
 
     setIsLoading(false);
-  }, [noteId, getCachedNote, clearCachedNote, isInitialized, isOnline, storeNoteLocally]);
+  }, [noteId, getCachedNote, clearCachedNote]);
 
   useEffect(() => {
     fetchNote();
@@ -138,62 +61,21 @@ export function useNoteDetail(noteId: string | undefined) {
 
   const updateNote = useCallback(async (data: { title?: string; transcript?: string; tags?: string[] }): Promise<boolean> => {
     if (!noteId) return false;
-
-    // Update local DB first
-    if (isInitialized) {
-      await notesRepository.updateNote(noteId, {
-        title: data.title,
-        transcript: data.transcript,
-        tags: data.tags,
-      });
-      console.log('[useNoteDetail] Updated note in local DB:', noteId);
+    const { data: updated, error: apiError } = await notesService.updateNote(noteId, data);
+    if (apiError) {
+      setError(apiError);
+      return false;
     }
-
-    // If online, sync to server
-    if (isOnline) {
-      const { data: updated, error: apiError } = await notesService.updateNote(noteId, data);
-      if (apiError) {
-        console.warn('[useNoteDetail] Server update failed, will sync later:', apiError);
-        // Don't set error - local update succeeded
-      } else if (updated) {
-        setRawNote(updated);
-        // Write-through: update local DB with server response
-        await storeNoteLocally(updated);
-      }
-    } else {
-      // Offline - update UI state from local data
-      setRawNote(prev => prev ? {
-        ...prev,
-        title: data.title ?? prev.title,
-        transcript: data.transcript ?? prev.transcript,
-        tags: data.tags ?? prev.tags,
-      } : null);
-    }
-
+    if (updated) setRawNote(updated);
     return true;
-  }, [noteId, isInitialized, isOnline, storeNoteLocally]);
+  }, [noteId]);
 
   const deleteNote = useCallback(async (): Promise<boolean> => {
     if (!noteId) return false;
-
-    // Delete locally first
-    if (isInitialized) {
-      await notesRepository.deleteNote(noteId);
-      console.log('[useNoteDetail] Deleted note locally:', noteId);
-    }
-
-    // If online, sync to server
-    if (isOnline) {
-      const { success, error: apiError } = await notesService.deleteNote(noteId);
-      if (apiError) {
-        console.warn('[useNoteDetail] Server delete failed, will sync later:', apiError);
-        // Don't set error - local delete succeeded
-      }
-      return success;
-    }
-
-    return true;
-  }, [noteId, isInitialized, isOnline]);
+    const { success, error: apiError } = await notesService.deleteNote(noteId);
+    if (apiError) setError(apiError);
+    return success;
+  }, [noteId]);
 
   const executeAction = useCallback(async (actionId: string, service: 'google' | 'apple'): Promise<ActionExecuteResponse | null> => {
     const { data, error: apiError } = await actionsService.executeAction(actionId, service);
