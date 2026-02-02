@@ -9,7 +9,7 @@ pydub==0.25.1
 
 # LLM integration
 anthropic==0.18.1
-groq>=0.4.0
+groq==0.4.2
 
 # External service integrations
 google-api-python-client==2.116.0
