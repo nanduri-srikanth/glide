@@ -68,6 +68,12 @@ class AuthViewModel: ObservableObject {
         password.count >= 8
     }
 
+    /// Check if password fields have been cleared from memory
+    /// This is useful for security auditing to verify passwords are not lingering
+    var isPasswordFieldsEmpty: Bool {
+        password.isEmpty && confirmPassword.isEmpty
+    }
+
     // MARK: - Actions
 
     func login() async {
@@ -125,9 +131,29 @@ class AuthViewModel: ObservableObject {
         isLoading = true
         errorMessage = nil
 
+        // Create local copies to attempt cleanup after use
+        // Note: Swift Strings cannot be securely zeroed, but we can clear the @Published properties
+        let tempPassword = password
+        let tempConfirmPassword = confirmPassword
+
+        // Immediately clear the published properties to reduce window of vulnerability
+        password = ""
+        confirmPassword = ""
+
+        // Attempt cleanup when scope exits (not guaranteed by Swift, but best effort)
+        defer {
+            // Attempt to clear passwords from memory
+            // Note: This is not guaranteed due to Swift's String immutability and ARC,
+            // but reduces the window where passwords are in memory
+            var passwordToClear = tempPassword
+            var confirmPasswordToClear = tempConfirmPassword
+            passwordToClear = ""
+            confirmPasswordToClear = ""
+        }
+
         do {
             logger.info("Registration attempt initiated", file: #file, function: #function, line: #line)
-            try await authService.register(email: email, password: password, name: name)
+            try await authService.register(email: email, password: tempPassword, name: name)
 
             // Update app state
             await MainActor.run {

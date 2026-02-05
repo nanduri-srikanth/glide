@@ -74,8 +74,8 @@ struct RootView: View {
                 // Authenticated flow
                 NotesListView()
             } else {
-                // Authentication flow
-                ContentView()
+                // Authentication flow - Login View
+                LoginView(viewModel: DependencyContainer.shared.makeAuthViewModel())
             }
         }
         .preferredColorScheme(appState.currentTheme.colorScheme)
