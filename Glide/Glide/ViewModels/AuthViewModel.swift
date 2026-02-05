@@ -15,8 +15,19 @@ class AuthViewModel: ObservableObject {
     // MARK: - Published Properties
 
     @Published var email: String = ""
+
+    // TODO: Consider using Data type for more secure password handling
+    // Swift Strings cannot be securely zeroed from memory, making them
+    // vulnerable to memory dumps and debugging attacks. For enhanced security,
+    // refactor to use Data or NSMutableData which allows explicit memory clearing.
     @Published var password: String = ""
+
     @Published var name: String = ""
+
+    // TODO: Consider using Data type for more secure password handling
+    // Swift Strings cannot be securely zeroed from memory, making them
+    // vulnerable to memory dumps and debugging attacks. For enhanced security,
+    // refactor to use Data or NSMutableData which allows explicit memory clearing.
     @Published var confirmPassword: String = ""
 
     @Published var isLoading: Bool = false
