@@ -83,7 +83,7 @@ export default function NoteListScreen() {
         actions: {
           calendar: Array.from({ length: n.calendar_count }, (_, i) => ({ id: String(i + 1), title: 'Event', date: '', time: '', status: 'pending' as const })),
           email: Array.from({ length: n.email_count }, (_, i) => ({ id: String(i + 1), to: '', subject: '', status: 'draft' as const })),
-          reminders: Array.from({ length: n.reminder_count }, (_, i) => ({ id: String(i + 1), title: 'Reminder', dueDate: '' })),
+          reminders: Array.from({ length: n.reminder_count }, (_, i) => ({ id: String(i + 1), title: 'Reminder', dueDate: '', priority: 'medium' as const, status: 'pending' as const })),
           nextSteps: [],
         },
         folderId: n.folder_id || folderId || '',
