@@ -220,6 +220,26 @@ class DatabaseManager {
       CREATE INDEX IF NOT EXISTS idx_sync_queue_created_at ON sync_queue(created_at);
     `);
 
+    // Create audio_uploads table for tracking audio file uploads
+    await this.db.execAsync(`
+      CREATE TABLE IF NOT EXISTS audio_uploads (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        note_id TEXT NOT NULL,
+        local_path TEXT NOT NULL,
+        remote_url TEXT,
+        file_size INTEGER,
+        status TEXT DEFAULT 'pending',
+        retry_count INTEGER DEFAULT 0,
+        last_error TEXT,
+        created_at TEXT NOT NULL,
+        uploaded_at TEXT,
+        FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_audio_uploads_note_id ON audio_uploads(note_id);
+      CREATE INDEX IF NOT EXISTS idx_audio_uploads_status ON audio_uploads(status);
+    `);
+
     if (DEBUG) console.log('[Database] Tables created successfully');
   }
 
@@ -301,6 +321,7 @@ class DatabaseManager {
 
     // Drop all tables
     await db.execAsync(`
+      DROP TABLE IF EXISTS audio_uploads;
       DROP TABLE IF EXISTS sync_queue;
       DROP TABLE IF EXISTS actions;
       DROP TABLE IF EXISTS notes;
