@@ -7,7 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		2ADC9F982F34ED7400E9BCA8 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 2ADC9F972F34ED7400E9BCA8 /* GRDB */; };
+		2A64D9CE2F350E0200964088 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 2A64D9CD2F350E0200964088 /* GRDB */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -26,6 +26,19 @@
 			remoteInfo = Glide;
 		};
 /* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		2A64D9D22F350E0600964088 /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		2AB032152F345C210076ABF7 /* Glide.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Glide.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -56,7 +69,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				2ADC9F982F34ED7400E9BCA8 /* GRDB in Frameworks */,
+				2A64D9CE2F350E0200964088 /* GRDB in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -115,6 +128,7 @@
 				2AB032112F345C210076ABF7 /* Sources */,
 				2AB032122F345C210076ABF7 /* Frameworks */,
 				2AB032132F345C210076ABF7 /* Resources */,
+				2A64D9D22F350E0600964088 /* Embed Frameworks */,
 			);
 			buildRules = (
 			);
@@ -125,7 +139,7 @@
 			);
 			name = Glide;
 			packageProductDependencies = (
-				2ADC9F972F34ED7400E9BCA8 /* GRDB */,
+				2A64D9CD2F350E0200964088 /* GRDB */,
 			);
 			productName = Glide;
 			productReference = 2AB032152F345C210076ABF7 /* Glide.app */;
@@ -211,7 +225,8 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				2ADC9F412F346E7800E9BCA8 /* XCLocalSwiftPackageReference "../packages/KeychainAccess-master" */,
-				2ADC9F422F346ECE00E9BCA8 /* XCRemoteSwiftPackageReference "GRDB" */,
+				2A64D9CA2F350DF400964088 /* XCRemoteSwiftPackageReference "GRDB" */,
+				2A64D9E52F353C7800964088 /* XCRemoteSwiftPackageReference "swift-http-types" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 2AB032162F345C210076ABF7 /* Products */;
@@ -642,7 +657,7 @@
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		2ADC9F422F346ECE00E9BCA8 /* XCRemoteSwiftPackageReference "GRDB" */ = {
+		2A64D9CA2F350DF400964088 /* XCRemoteSwiftPackageReference "GRDB" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/groue/GRDB.swift";
 			requirement = {
@@ -650,12 +665,20 @@
 				kind = branch;
 			};
 		};
+		2A64D9E52F353C7800964088 /* XCRemoteSwiftPackageReference "swift-http-types" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/nanduri-srikanth/swift-http-types";
+			requirement = {
+				branch = main;
+				kind = branch;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		2ADC9F972F34ED7400E9BCA8 /* GRDB */ = {
+		2A64D9CD2F350E0200964088 /* GRDB */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 2ADC9F422F346ECE00E9BCA8 /* XCRemoteSwiftPackageReference "GRDB" */;
+			package = 2A64D9CA2F350DF400964088 /* XCRemoteSwiftPackageReference "GRDB" */;
 			productName = GRDB;
 		};
 /* End XCSwiftPackageProductDependency section */
