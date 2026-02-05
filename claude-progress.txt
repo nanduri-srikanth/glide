@@ -46,10 +46,10 @@
 
 ## Overall Progress
 
-- **Total Features:** 12
-- **Passing:** 3 (25%)
-- **In Progress:** 0
-- **Pending:** 9
+- **Total Features:** 10
+- **Passing:** 4 (40%)
+- **In Progress:** 3
+- **Pending:** 3
 
 ---
 
@@ -114,3 +114,47 @@
 
 **Next Steps:**
 - Feature #3: Document DEV_AUTO_LOGIN Setting (depends on #2, now unblocked)
+
+---
+
+### Feature #3: Document DEV_AUTO_LOGIN Setting ✅
+**Status:** PASSING
+**Commit:** ee2cbfb
+
+**Implementation:**
+- Feature was already fully implemented in the codebase
+- AuthContext.tsx has clear inline comments (lines 14-20) explaining DEV_AUTO_LOGIN
+- Environment variables already configured in .env.local and .env.example
+- README.md documents how to disable for testing real auth flow
+- Created comprehensive standalone documentation in `docs/DEV_AUTO_LOGIN.md`
+
+**Environment Variables:**
+- `EXPO_PUBLIC_DEV_AUTO_LOGIN`: Enable/disable auto-login (true/false)
+- `EXPO_PUBLIC_DEV_TEST_EMAIL`: Test user email (default: devtest@glide.app)
+- `EXPO_PUBLIC_DEV_TEST_PASSWORD`: Test user password (default: test123)
+
+**Documentation Added:**
+- docs/DEV_AUTO_LOGIN.md - Complete feature guide with:
+  - Configuration instructions
+  - Behavior explanation
+  - Testing procedures
+  - Troubleshooting section
+  - Security considerations
+  - Test user setup guide
+
+**Testing Real Auth Flow:**
+To test actual authentication, disable auto-login:
+```bash
+# In .env.local
+EXPO_PUBLIC_DEV_AUTO_LOGIN=false
+```
+Then restart the app to see the login screen.
+
+**Files Modified:**
+- docs/DEV_AUTO_LOGIN.md - Created comprehensive documentation
+
+**Existing Implementation (No Changes Needed):**
+- context/AuthContext.tsx - Already has clear comments and environment variable support
+- .env.local - Already configured with test credentials
+- .env.example - Already documented
+- README.md - Already has Development Mode section (lines 51-63)
