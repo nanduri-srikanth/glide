@@ -18,22 +18,36 @@ struct GlideApp: App {
     // Background task identifier for token refresh
     private let backgroundTaskIdentifier = "com.glide.tokenRefresh"
 
+    // Security state
+    @State private var showJailbreakAlert = false
+    @State private var securityReport: SecurityReport?
+
     // MARK: - Body
 
     var body: some Scene {
         WindowGroup {
-            RootView()
-                .environmentObject(appState)
-                .environmentObject(navigationCoordinator)
-                .onAppear {
-                    setupApp()
-                }
-                .onOpenURL { url in
-                    handleDeepLink(url)
-                }
-                .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
-                    handleAppWillEnterForeground()
-                }
+            ZStack {
+                RootView()
+                    .environmentObject(appState)
+                    .environmentObject(navigationCoordinator)
+                    .onAppear {
+                        setupApp()
+                    }
+                    .onOpenURL { url in
+                        handleDeepLink(url)
+                    }
+                    .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
+                        handleAppWillEnterForeground()
+                    }
+                    .alert("Security Alert", isPresented: $showJailbreakAlert) {
+                        Button("OK", role: .cancel) {
+                            // Exit app when jailbroken device detected
+                            exit(0)
+                        }
+                    } message: {
+                        Text(securityReport?.description ?? "This app cannot run on jailbroken devices for security reasons.")
+                    }
+            }
         }
     }
 
