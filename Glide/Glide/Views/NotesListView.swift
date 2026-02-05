@@ -31,6 +31,8 @@ struct NotesListView: View {
             Group {
                 if viewModel.isLoading {
                     loadingView
+                } else if let errorMessage = viewModel.errorMessage, viewModel.isEmpty {
+                    errorView(errorMessage)
                 } else if viewModel.isEmpty {
                     emptyView
                 } else {
@@ -38,6 +40,12 @@ struct NotesListView: View {
                 }
             }
             .navigationTitle("Notes")
+            .onAppear {
+                // Fetch notes when view appears
+                if viewModel.notes.isEmpty {
+                    viewModel.refresh()
+                }
+            }
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(action: {
@@ -73,6 +81,18 @@ struct NotesListView: View {
             )) { alert in
                 alertContent(alert)
             }
+            .alert("Error", isPresented: Binding<Bool>(
+                get: { viewModel.errorMessage != nil && !viewModel.isEmpty },
+                set: { _ in viewModel.errorMessage = nil }
+            )) {
+                Button("OK") {
+                    viewModel.errorMessage = nil
+                }
+            } message: {
+                if let errorMessage = viewModel.errorMessage {
+                    Text(errorMessage)
+                }
+            }
         }
     }
 
@@ -105,6 +125,35 @@ struct NotesListView: View {
                 navigationCoordinator.presentSheet(.newNote)
             }) {
                 Text("Create Note")
+                    .font(.headline)
+                    .foregroundColor(.white)
+                    .padding(.horizontal, DesignConstants.spacingL)
+                    .padding(.vertical, DesignConstants.spacingM)
+                    .background(Color.blue)
+                    .cornerRadius(DesignConstants.cornerRadiusM)
+            }
+        }
+        .padding(DesignConstants.spacingXL)
+    }
+
+    private func errorView(_ message: String) -> some View {
+        VStack(spacing: DesignConstants.spacingL) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: DesignConstants.iconSizeXL))
+                .foregroundColor(.orange)
+
+            Text("Couldn't Load Notes")
+                .font(.headline)
+
+            Text(message)
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+
+            Button(action: {
+                viewModel.refresh()
+            }) {
+                Text("Retry")
                     .font(.headline)
                     .foregroundColor(.white)
                     .padding(.horizontal, DesignConstants.spacingL)

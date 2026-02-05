@@ -898,3 +898,34 @@ Completed all three assigned features:
 - TypeScript compilation passes with zero errors
 - No mock data patterns found
 
+
+## Session Summary: Feature #22 - Swift Project Location Guide
+
+**Date**: February 5, 2026
+**Feature**: #22 - Swift Project Location Guide (Documentation)
+**Status**: ✅ PASSING
+**Commit**: 0667d47
+
+### What Was Accomplished
+
+1. **Created Glide/Glide/README.md** - Comprehensive documentation for the native iOS Swift app
+2. **Created Glide/Glide/Documentation/ARCHITECTURE.md** - Visual architecture documentation
+3. **Updated root README.md** - Added prominent dual frontend notice
+
+### Feature Steps Verification
+
+✅ Step 1: Create Glide/Glide/README.md explaining this is the native iOS Swift app
+✅ Step 2: Document the folder structure (Views/, ViewModels/, Services/, Models/)
+✅ Step 3: Note that the root directory contains the React Native/Expo app
+✅ Step 4: Note that both apps connect to the same backend at glide-backend/
+✅ Step 5: Add note: ALL SwiftUI features go in Glide/Glide/, never in root
+
+### Current Project Status
+
+- **Total Features**: 22
+- **Passing**: 14 (63.6%)
+- **In Progress**: 0
+- **Pending**: 8
+
+Feature #22 completed successfully\!
+

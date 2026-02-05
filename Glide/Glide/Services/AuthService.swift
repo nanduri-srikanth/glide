@@ -86,28 +86,36 @@ class AuthService: AuthServiceProtocol {
         let request = LoginRequest(email: email, password: password)
 
         let body = try JSONEncoder().encode(request)
-        let response: TokenResponse = try await apiService.request("/auth/login", method: .post, body: body)
+        let response: LoginResponse = try await apiService.request("/auth/login", method: .post, body: body)
 
-        // Save auth token and refresh token
-        try keychainService.set(key: "auth_token", value: response.accessToken)
-        try keychainService.set(key: "refresh_token", value: response.refreshToken)
+        // Save auth token and user ID
+        try keychainService.set(key: "auth_token", value: response.token)
+        try keychainService.set(key: "user_id", value: response.user.id)
+        
+        // Note: If backend provides refresh token, add it here
+        // try keychainService.set(key: "refresh_token", value: response.refreshToken)
+        
+        currentUserId = response.user.id
 
-        // Fetch user profile to get user ID
-        // In production, this would come from the login response
-        logger.info("User logged in", file: #file, function: #function, line: #line)
+        logger.info("User logged in: \(response.user.id)", file: #file, function: #function, line: #line)
     }
 
     func register(email: String, password: String, name: String) async throws {
         let request = RegisterRequest(email: email, password: password, name: name)
 
         let body = try JSONEncoder().encode(request)
-        let response: TokenResponse = try await apiService.request("/auth/register", method: .post, body: body)
+        let response: RegisterResponse = try await apiService.request("/auth/register", method: .post, body: body)
 
-        // Save auth token and refresh token
-        try keychainService.set(key: "auth_token", value: response.accessToken)
-        try keychainService.set(key: "refresh_token", value: response.refreshToken)
+        // Save auth token and user ID
+        try keychainService.set(key: "auth_token", value: response.token)
+        try keychainService.set(key: "user_id", value: response.user.id)
+        
+        // Note: If backend provides refresh token, add it here
+        // try keychainService.set(key: "refresh_token", value: response.refreshToken)
+        
+        currentUserId = response.user.id
 
-        logger.info("User registered", file: #file, function: #function, line: #line)
+        logger.info("User registered: \(response.user.id)", file: #file, function: #function, line: #line)
     }
 
     func logout() async throws {
@@ -116,6 +124,7 @@ class AuthService: AuthServiceProtocol {
 
         // Clear stored credentials
         try? keychainService.delete(key: "auth_token")
+        try? keychainService.delete(key: "refresh_token")
         try? keychainService.delete(key: "user_id")
 
         currentUserId = nil
