@@ -1,5 +1,91 @@
 # Glide Development Progress
 
+## Session - 2026-02-05 (Session 2 - Swift Architecture & Models)
+
+### Completed Features (This Session)
+
+#### Feature #4: Project Architecture Setup ✅
+**Status:** PASSING
+**Commit:** 21dd8b8
+
+**Implementation:**
+- Created comprehensive MVVM architecture with folder structure
+- Models/, Views/, ViewModels/, Services/, Utilities/, Resources/
+- DependencyContainer for service injection
+- NavigationCoordinator for centralized navigation
+- AppState for global state management
+- Config.swift for environment-specific settings
+- Updated GlideApp.swift entry point
+- Sample implementations in each layer
+- ARCHITECTURE.md documentation
+
+**Files Created/Modified:**
+- Glide/Glide/Config.swift
+- Glide/Glide/AppState.swift
+- Glide/Glide/DependencyContainer.swift
+- Glide/Glide/NavigationCoordinator.swift
+- Glide/Glide/Models/User.swift (basic)
+- Glide/Glide/Models/Note.swift (basic)
+- Glide/Glide/Models/Folder.swift (basic)
+- Glide/Glide/Views/NotesListView.swift
+- Glide/Glide/ViewModels/AuthViewModel.swift
+- Glide/Glide/ViewModels/NotesListViewModel.swift
+- Glide/Glide/ViewModels/SettingsViewModel.swift
+- Glide/Glide/ViewModels/NoteDetailViewModel.swift
+- Glide/Glide/Services/APIService.swift
+- Glide/Glide/Services/AuthService.swift
+- Glide/Glide/Services/KeychainService.swift
+- Glide/Glide/Services/LoggerService.swift
+- Glide/Glide/Services/UserDefaultsService.swift
+- Glide/Glide/Services/UserRepository.swift
+- Glide/Glide/Services/NotesRepository.swift
+- Glide/Glide/Utilities/Extensions.swift
+- Glide/Glide/Utilities/Constants.swift
+- Glide/Glide/Resources/ARCHITECTURE.md
+- Glide/Glide/Resources/SETUP_SUMMARY.md
+- Glide/Glide/GlideApp.swift (updated)
+
+#### Feature #10: Core Data Models (Backend-Aligned) ✅
+**Status:** PASSING
+**Commit:** d50f322
+
+**Implementation:**
+- Created Models/API/ folder with network response types
+- UserResponse matching backend user_schemas.py
+- Token model with expiration tracking
+- ActionResponse with all calendar/email/reminder fields
+- ActionType, ActionStatus, ActionPriority enums
+- NoteResponse matching backend note_schemas.py
+- NoteListItem for optimized list views
+- NoteListResponse with pagination
+- FolderResponse with recursive children
+- APIErrorResponse with error code mapping
+- Created Models/Local/ for offline extensions
+- LocalNote with syncStatus and localAudioPath
+- LocalFolder with syncStatus
+- SyncStatus enum (synced, pending, conflict, error)
+- CodingKeys for snake_case to camelCase conversion
+- Unit tests in ModelTests.swift
+- Mock data for all models (#if DEBUG)
+- MODELS_GUIDE.md documentation
+
+**Files Created:**
+- Glide/Glide/Models/API/UserModels.swift
+- Glide/Glide/Models/API/ActionModels.swift
+- Glide/Glide/Models/API/NoteModels.swift
+- Glide/Glide/Models/API/FolderModels.swift
+- Glide/Glide/Models/API/APIError.swift
+- Glide/Glide/Models/Local/LocalModels.swift
+- Glide/GlideTests/ModelTests.swift
+- Glide/Glide/Resources/MODELS_GUIDE.md
+
+#### Feature #5: Core Data Models ✅
+**Status:** PASSING (Completed via Feature #10)
+
+Feature #5 requirements were fully satisfied by the comprehensive implementation in Feature #10, which provided more detailed backend-aligned models.
+
+---
+
 ## Session - 2026-02-05 (Feature #9 Status Update)
 
 ### Feature #9: Swift Package Manager Dependencies - STATUS UPDATE
