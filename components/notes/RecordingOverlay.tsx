@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { NotesColors } from '@/constants/theme';
+import { useAudioPlayback } from '@/hooks/useAudioPlayback';
 
 // Destination type for context indicator
 export interface RecordingDestination {
@@ -118,6 +119,16 @@ export function RecordingOverlay({
   const textInputRef = useRef<TextInput>(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
+  // Audio playback for preview
+  const {
+    isPlaying,
+    isLoaded: isPlaybackLoaded,
+    progress: playbackProgress,
+    togglePlayback,
+    reset: resetPlayback,
+    loadSound,
+  } = useAudioPlayback();
+
   // Animation for mic moving to corner
   const micScale = useRef(new Animated.Value(1)).current;
   const micOpacity = useRef(new Animated.Value(1)).current;
@@ -126,10 +137,12 @@ export function RecordingOverlay({
   const isTyping = notes.length > 0 || isInputFocused;
   const showMicInCorner = isTyping && !isRecording;
 
-  // Track saved recording URI
+  // Track saved recording URI and load for playback
   React.useEffect(() => {
     if (recordingUri) {
       setSavedAudioUri(recordingUri);
+      // Pre-load for playback preview
+      loadSound(recordingUri);
     }
   }, [recordingUri]);
 
@@ -205,11 +218,14 @@ export function RecordingOverlay({
         const uri = await onStopRecording();
         if (uri) {
           setSavedAudioUri(uri);
+          // Pre-load for playback preview
+          loadSound(uri);
         }
       }
     } else {
       // Start new recording (clear previous if any)
       setSavedAudioUri(null);
+      resetPlayback();
       onStartRecording();
     }
   };
@@ -308,13 +324,19 @@ export function RecordingOverlay({
       <View style={styles.bottomControls}>
         {/* Mic / Recording control - centered (hidden when typing, mic moves to corner) */}
         {isRecording && !isPaused ? (
-          // Recording in progress - always show wave and stop button at bottom
+          // Recording in progress - show waveform with pause and stop buttons
           <View style={styles.micContainer}>
-            <TouchableOpacity
-              style={styles.recordingActiveContainer}
-              onPress={handleMicPress}
-              activeOpacity={0.7}
-            >
+            <View style={styles.recordingControlsContainer}>
+              {/* Pause button */}
+              <TouchableOpacity
+                style={styles.pauseButton}
+                onPress={onPauseRecording}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="pause" size={24} color="#FFFFFF" />
+              </TouchableOpacity>
+
+              {/* Waveform and timer */}
               <Animated.View
                 style={[
                   styles.recordingIndicator,
@@ -324,35 +346,86 @@ export function RecordingOverlay({
                 <MiniWaveform isActive={true} />
               </Animated.View>
               <Text style={styles.timerText}>{formatTime(duration)}</Text>
-              <View style={styles.stopHint}>
-                <View style={styles.stopIcon} />
-              </View>
-            </TouchableOpacity>
+
+              {/* Stop button */}
+              <TouchableOpacity
+                style={styles.stopButton}
+                onPress={handleMicPress}
+                activeOpacity={0.7}
+              >
+                <View style={styles.stopIconLarge} />
+              </TouchableOpacity>
+            </View>
           </View>
         ) : isRecording && isPaused ? (
-          // Paused - show paused state
+          // Paused - show resume and stop buttons
           <View style={styles.micContainer}>
-            <TouchableOpacity
-              style={styles.recordingActiveContainer}
-              onPress={handleMicPress}
-              activeOpacity={0.7}
-            >
-              <View style={styles.pausedIndicator}>
-                <Ionicons name="pause" size={16} color={NotesColors.textSecondary} />
+            <View style={styles.recordingControlsContainer}>
+              {/* Resume button */}
+              <TouchableOpacity
+                style={styles.resumeButton}
+                onPress={onResumeRecording}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="play" size={24} color="#FFFFFF" />
+              </TouchableOpacity>
+
+              {/* Paused indicator and timer */}
+              <View style={styles.pausedIndicatorLarge}>
+                <Ionicons name="pause" size={20} color={NotesColors.textSecondary} />
               </View>
               <Text style={styles.timerTextPaused}>{formatTime(duration)}</Text>
-              <Ionicons name="play" size={18} color={NotesColors.primary} />
-            </TouchableOpacity>
+
+              {/* Stop/Done button */}
+              <TouchableOpacity
+                style={styles.doneButton}
+                onPress={handleMicPress}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="checkmark" size={24} color="#FFFFFF" />
+              </TouchableOpacity>
+            </View>
           </View>
         ) : hasStoppedRecording ? (
-          // Has recording that was stopped - show completed state
+          // Has recording that was stopped - show playback controls
           <View style={styles.micContainer}>
-            <View style={styles.recordingActiveContainer}>
-              <View style={styles.completedIndicator}>
-                <Ionicons name="checkmark" size={14} color="#4CAF50" />
+            <View style={styles.recordingCompletedContainer}>
+              {/* Play/Pause button */}
+              <TouchableOpacity
+                style={styles.playbackButton}
+                onPress={() => savedAudioUri && togglePlayback(savedAudioUri)}
+              >
+                <Ionicons
+                  name={isPlaying ? 'pause' : 'play'}
+                  size={24}
+                  color="#FFFFFF"
+                />
+              </TouchableOpacity>
+
+              {/* Progress and duration */}
+              <View style={styles.playbackInfoContainer}>
+                <Text style={styles.timerTextComplete}>{formatTime(duration)}</Text>
+                {isPlaybackLoaded && (
+                  <View style={styles.playbackProgressBar}>
+                    <View
+                      style={[
+                        styles.playbackProgressFill,
+                        { width: `${playbackProgress * 100}%` },
+                      ]}
+                    />
+                  </View>
+                )}
               </View>
-              <Text style={styles.timerTextComplete}>{formatTime(duration)}</Text>
-              <TouchableOpacity onPress={() => { setSavedAudioUri(null); onStartRecording(); }}>
+
+              {/* Re-record button */}
+              <TouchableOpacity
+                style={styles.reRecordButton}
+                onPress={() => {
+                  setSavedAudioUri(null);
+                  resetPlayback();
+                  onStartRecording();
+                }}
+              >
                 <Ionicons name="refresh" size={18} color={NotesColors.textSecondary} />
               </TouchableOpacity>
             </View>
@@ -418,11 +491,11 @@ export function RecordingOverlay({
         {!showMicInCorner && (
           <Text style={styles.helperText}>
             {isRecording && !isPaused
-              ? 'Tap to stop recording'
+              ? 'Pause to take a break, Stop when done'
               : isRecording && isPaused
-              ? 'Tap to resume'
+              ? 'Resume recording or finish with ✓'
               : hasStoppedRecording
-              ? 'Audio attached'
+              ? 'Tap play to preview audio'
               : 'Tap mic to record'}
           </Text>
         )}
@@ -553,11 +626,58 @@ const styles = StyleSheet.create({
     minWidth: 45,
   },
   timerTextComplete: {
-    fontSize: 15,
-    fontWeight: '500',
+    fontSize: 18,
+    fontWeight: '600',
     color: '#4CAF50',
     fontVariant: ['tabular-nums'],
-    minWidth: 45,
+  },
+  recordingControlsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 59, 48, 0.1)',
+    borderRadius: 32,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    gap: 16,
+  },
+  pauseButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: NotesColors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  resumeButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#4CAF50',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stopButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#FF3B30',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stopIconLarge: {
+    width: 18,
+    height: 18,
+    borderRadius: 3,
+    backgroundColor: '#FFFFFF',
+  },
+  doneButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#4CAF50',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   stopHint: {
     backgroundColor: NotesColors.card,
@@ -575,10 +695,55 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 6,
   },
+  pausedIndicatorLarge: {
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 20,
+    padding: 10,
+  },
   completedIndicator: {
     backgroundColor: 'rgba(76, 175, 80, 0.15)',
     borderRadius: 16,
     padding: 6,
+  },
+  recordingCompletedContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(76, 175, 80, 0.12)',
+    borderRadius: 32,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    gap: 16,
+    minWidth: 280,
+  },
+  playbackButton: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#4CAF50',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  playbackInfoContainer: {
+    flex: 1,
+    gap: 6,
+    minWidth: 100,
+  },
+  playbackProgressBar: {
+    height: 6,
+    backgroundColor: 'rgba(76, 175, 80, 0.25)',
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  playbackProgressFill: {
+    height: '100%',
+    backgroundColor: '#4CAF50',
+    borderRadius: 3,
+  },
+  reRecordButton: {
+    padding: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 20,
   },
   micButton: {
     backgroundColor: NotesColors.primary,

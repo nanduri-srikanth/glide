@@ -1,0 +1,262 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - "**"
+  schedule:
+    - cron: "3 3 * * 2" # 3:03 AM, every Tuesday
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # TODO: Re-enable when --ifdef no-indent works as intended
+  # lint:
+  #   name: Lint
+  #   runs-on: macos-latest
+  #   steps:
+  #     - name: Git Checkout
+  #       uses: actions/checkout@v5
+
+  #     - name: Install SwiftFormat
+  #       run: |
+  #         brew unlink swiftformat
+  #         brew install swiftformat --HEAD
+
+  #     - name: SwiftFormat Lint
+  #       run: swiftformat --lint . --reporter github-actions-log
+
+  lint-podspec:
+    if: github.event_name != 'pull_request' || !contains(github.event.pull_request.title, '[skip ci]')
+    name: Lint Podspec
+    runs-on: macos-15
+    steps:
+      - name: Git Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # required to be able to find Git tags
+
+      - name: Select Xcode version
+        run: sudo xcodes select 16.4
+
+      - name: Install Runtimes
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 15
+          max_attempts: 3
+          command: xcodebuild -downloadAllPlatforms
+
+      - name: Lint Podspec
+        run: |
+          set -eo pipefail
+          export LIB_VERSION=$(git describe --tags `git rev-list --tags --max-count=1`)
+          pod lib lint SwiftUIIntrospect.podspec --allow-warnings
+
+  ci:
+    if: github.event_name != 'pull_request' || !contains(github.event.pull_request.title, '[skip ci]')
+    name: ${{ matrix.runtime[0] }} ${{ matrix.runtime[1] }}
+    runs-on: macos-15
+    strategy:
+      fail-fast: false
+      matrix:
+        runtime:
+          - [iOS, 15, 5]
+          - [iOS, 16, 4]
+          - [iOS, 17, 5]
+          - [iOS, 18, 6]
+          - [iOS, 26, 0]
+
+          - [iPadOS, 15, 5]
+          - [iPadOS, 16, 4]
+          - [iPadOS, 17, 5]
+          - [iPadOS, 18, 6]
+          - [iPadOS, 26, 0]
+
+          - [macCatalyst, 15, 0]
+          - [macOS, 15, 0]
+
+          - [tvOS, 15, 4]
+          - [tvOS, 16, 4]
+          - [tvOS, 17, 5]
+          - [tvOS, 18, 5]
+          - [tvOS, 26, 0]
+
+          - [visionOS, 1, 2]
+          - [visionOS, 2, 5]
+          - [visionOS, 26, 0]
+
+          - [watchOS, 8, 5]
+          - [watchOS, 9, 4]
+          - [watchOS, 10, 5]
+          - [watchOS, 11, 5]
+          - [watchOS, 26, 0]
+    steps:
+      - name: Git Checkout
+        uses: actions/checkout@v5
+
+      - name: Set Environment Variables
+        run: |
+          set -euo pipefail
+
+          PLATFORM="${{ matrix.runtime[0] }}"
+          MAJOR="${{ matrix.runtime[1] }}"
+          MINOR="${{ matrix.runtime[2] }}"
+
+          if [ "$PLATFORM" = "iPadOS" ]; then
+            PLATFORM=iOS
+            SCRIPT_PLATFORM=ipados
+          else
+            case "$PLATFORM" in
+              iOS) SCRIPT_PLATFORM=ios ;;
+              macOS) SCRIPT_PLATFORM=macos ;;
+              macCatalyst) SCRIPT_PLATFORM=mac-catalyst ;;
+              tvOS) SCRIPT_PLATFORM=tvos ;;
+              visionOS) SCRIPT_PLATFORM=visionos ;;
+              watchOS) SCRIPT_PLATFORM=watchos ;;
+            esac
+          fi
+
+          if [ "$PLATFORM" = "macCatalyst" ]; then
+            XCB_PLATFORM="mac-catalyst"
+          else
+            XCB_PLATFORM="$PLATFORM"
+          fi
+
+          RUNTIME="$PLATFORM $MAJOR.$MINOR"
+
+          echo "PLATFORM=$PLATFORM" >> $GITHUB_ENV
+          echo "MAJOR=$MAJOR" >> $GITHUB_ENV
+          echo "MINOR=$MINOR" >> $GITHUB_ENV
+          echo "RUNTIME=$RUNTIME" >> $GITHUB_ENV
+          echo "SCRIPT_PLATFORM=$SCRIPT_PLATFORM" >> $GITHUB_ENV
+
+      - if: ${{ env.PLATFORM != 'macCatalyst' && env.PLATFORM != 'macOS' }}
+        name: Download Default ${{ env.PLATFORM }} Runtime
+        run: xcodebuild -downloadPlatform ${{ env.PLATFORM }}
+        continue-on-error: true
+
+      - if: ${{ env.PLATFORM != 'macCatalyst' && env.PLATFORM != 'macOS' }}
+        name: Check for ${{ env.RUNTIME }} Runtime
+        run: |
+          if xcrun simctl list runtimes | grep -q "$RUNTIME"; then
+            echo "has_runtime=true" >> "$GITHUB_ENV"
+          else
+            echo "has_runtime=false" >> "$GITHUB_ENV"
+          fi
+
+      - name: Select Xcode 26.0
+        uses: mxcl/xcodebuild@v3
+        with:
+          xcode: ~26.0
+          action: none
+          verbosity: xcbeautify
+
+      - if: env.has_runtime == 'false'
+        name: List Downloadable Runtimes
+        run: xcodes runtimes --include-betas
+
+      - if: env.has_runtime == 'false'
+        name: Download Required ${{ env.RUNTIME }} Runtime
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 15
+          max_attempts: 3
+          command: sudo xcodes runtimes install "$RUNTIME"
+
+      - if: ${{ env.PLATFORM != 'macCatalyst' && env.PLATFORM != 'macOS' }}
+        name: Create Required Simulators
+        run: |
+          set -eo pipefail
+          xcrun simctl delete all
+          OUTPUT=$(script/create_simulators --platform ${{ env.SCRIPT_PLATFORM }} --version ${{ env.MAJOR }} | tee /dev/stderr)
+          FIRST_UDID=$(printf "%s\n" "$OUTPUT" | awk '/^(Created:|Already exists:)/{print $NF}' | head -n1)
+          if [ -n "$FIRST_UDID" ]; then
+            echo "SIM_UDID=$FIRST_UDID" >> "$GITHUB_ENV"
+            echo "Captured SIM_UDID=$FIRST_UDID"
+          fi
+
+      - name: List Available Runtimes, Simulators, and Destinations
+        run: |
+          xcrun simctl list
+          xcodebuild -scheme "SwiftUIIntrospect" -showdestinations
+
+      - if: ${{ env.PLATFORM != 'watchOS' }}
+        name: Build Showcase
+        uses: davdroman/xcodebuild@destination
+        with:
+          xcode: ~26.0
+          platform: ${{ env.XCB_PLATFORM }}
+          platform-version: ~${{ env.MAJOR }}.${{ env.MINOR }}
+          destination: ${{ env.SIM_UDID }}
+          action: build
+          scheme: Showcase
+          configuration: Debug
+          verbosity: xcbeautify
+
+      - if: ${{ env.PLATFORM == 'watchOS' }}
+        name: Build Library
+        uses: davdroman/xcodebuild@destination
+        with:
+          xcode: ~26.0
+          platform: ${{ env.XCB_PLATFORM }}
+          platform-version: ~${{ env.MAJOR }}.${{ env.MINOR }}
+          destination: ${{ env.SIM_UDID }}
+          action: build
+          scheme: SwiftUIIntrospect
+          configuration: Debug
+          verbosity: xcbeautify
+
+      - if: ${{ env.PLATFORM != 'watchOS' }}
+        name: Run Tests
+        uses: davdroman/xcodebuild@destination
+        with:
+          xcode: ~26.0
+          platform: ${{ env.XCB_PLATFORM }}
+          platform-version: ~${{ env.MAJOR }}.${{ env.MINOR }}
+          destination: ${{ env.SIM_UDID }}
+          action: test
+          scheme: SwiftUIIntrospectTests
+          configuration: Debug
+          verbosity: xcbeautify
+
+  framework-archiving:
+    if: github.event_name != 'pull_request' || !contains(github.event.pull_request.title, '[skip ci]')
+    name: Archive Framework (${{ matrix.platform }})
+    runs-on: macos-15
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [iOS, macCatalyst, macOS, tvOS, visionOS, watchOS]
+        include:
+          - platform: iOS
+            destination: "generic/platform=iOS"
+          - platform: macCatalyst
+            destination: "platform=macOS,variant=Mac Catalyst"
+          - platform: macOS
+            destination: "generic/platform=macOS"
+          - platform: tvOS
+            destination: "generic/platform=tvOS"
+          - platform: visionOS
+            destination: "generic/platform=visionOS"
+          - platform: watchOS
+            destination: "generic/platform=watchOS"
+    steps:
+      - name: Git Checkout
+        uses: actions/checkout@v5
+
+      - name: Select Xcode version
+        run: sudo xcodes select 16.4
+
+      - name: Archive Framework
+        run: |
+          xcodebuild archive \
+            -scheme "SwiftUIIntrospectTestFramework" \
+            -destination "${{ matrix.destination }}" \
+            -archivePath .build/archiving/${{ matrix.platform }} \
+            SKIP_INSTALL=NO \
+            BUILD_LIBRARY_FOR_DISTRIBUTION=YES

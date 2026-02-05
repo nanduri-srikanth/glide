@@ -1,17 +1,18 @@
 """Notes CRUD router."""
+import logging
 from datetime import datetime
 from typing import Annotated, Optional, List
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlalchemy import select, func, or_, and_
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
 from app.models.user import User
 from app.models.note import Note, Folder
-from app.models.action import Action, ActionType
+from app.models.action import ActionType
 from app.routers.auth import get_current_user
 from app.services.llm import LLMService
 from app.schemas.note_schemas import (
@@ -23,6 +24,9 @@ from app.schemas.note_schemas import (
     FolderResponse,
     UnifiedSearchResponse,
 )
+from app.core.errors import NotFoundError, ExternalServiceError
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -293,10 +297,7 @@ async def get_note(
     note = result.scalar_one_or_none()
 
     if not note:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Note not found"
-        )
+        raise NotFoundError(resource="note", identifier=str(note_id))
 
     response = NoteResponse.model_validate(note)
     if note.folder:
@@ -305,7 +306,7 @@ async def get_note(
     return response
 
 
-@router.post("", response_model=NoteResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=NoteResponse, status_code=201)
 async def create_note(
     note_data: NoteCreate,
     current_user: Annotated[User, Depends(get_current_user)],
@@ -320,10 +321,7 @@ async def create_note(
             .where(Folder.user_id == current_user.id)
         )
         if not result.scalar_one_or_none():
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Folder not found"
-            )
+            raise NotFoundError(resource="folder", identifier=str(note_data.folder_id))
 
     note = Note(
         user_id=current_user.id,
@@ -374,10 +372,7 @@ async def update_note(
     note = result.scalar_one_or_none()
 
     if not note:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Note not found"
-        )
+        raise NotFoundError(resource="note", identifier=str(note_id))
 
     # Verify folder exists if changing
     if note_data.folder_id:
@@ -387,10 +382,7 @@ async def update_note(
             .where(Folder.user_id == current_user.id)
         )
         if not result.scalar_one_or_none():
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Folder not found"
-            )
+            raise NotFoundError(resource="folder", identifier=str(note_data.folder_id))
 
     update_data = note_data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
@@ -413,7 +405,7 @@ async def update_note(
     return response
 
 
-@router.delete("/{note_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{note_id}", status_code=204)
 async def delete_note(
     note_id: UUID,
     current_user: Annotated[User, Depends(get_current_user)],
@@ -429,10 +421,7 @@ async def delete_note(
     note = result.scalar_one_or_none()
 
     if not note:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Note not found"
-        )
+        raise NotFoundError(resource="note", identifier=str(note_id))
 
     if permanent:
         await db.delete(note)
@@ -459,10 +448,7 @@ async def restore_note(
     note = result.scalar_one_or_none()
 
     if not note:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Note not found in trash"
-        )
+        raise NotFoundError(resource="note", identifier=str(note_id))
 
     note.is_deleted = False
     note.deleted_at = None
@@ -506,10 +492,7 @@ async def auto_sort_note(
     note = result.scalar_one_or_none()
 
     if not note:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Note not found"
-        )
+        raise NotFoundError(resource="note", identifier=str(note_id))
 
     try:
         # Fetch user's folders for smart categorization
@@ -576,7 +559,8 @@ async def auto_sort_note(
 
     except Exception as e:
         await db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to auto-sort note: {str(e)}"
+        logger.exception(f"Failed to auto-sort note {note_id}: {e}")
+        raise ExternalServiceError(
+            service="llm",
+            message="Failed to auto-sort note. Please try again.",
         )

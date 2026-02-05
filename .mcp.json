@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "features": {
+      "command": "/Users/srikanthnanduri/autocoder/venv/bin/python",
+      "args": ["-m", "mcp_server.feature_mcp"],
+      "env": {
+        "PROJECT_DIR": "/Users/srikanthnanduri/glide/.autocoder",
+        "PYTHONPATH": "/Users/srikanthnanduri/autocoder"
+      }
+    }
+  }
+}

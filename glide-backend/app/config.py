@@ -70,6 +70,9 @@ class Settings(BaseSettings):
     # Apple CalDAV
     apple_caldav_url: str = "https://caldav.icloud.com"
 
+    # Apple Sign-In
+    apple_bundle_id: str = ""  # Your app's bundle ID (e.g., com.yourcompany.glide)
+
     # App Settings
     debug: bool = True
     allowed_origins: str = "http://localhost:3000,exp://localhost:8081"

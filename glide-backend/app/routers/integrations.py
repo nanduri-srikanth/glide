@@ -1,9 +1,10 @@
 """External integrations router (Google, Apple)."""
+import logging
 from datetime import datetime
 from typing import Annotated
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from google_auth_oauthlib.flow import Flow
@@ -14,6 +15,11 @@ from app.models.user import User
 from app.routers.auth import get_current_user
 from app.config import get_settings
 from app.utils import encrypt_token, decrypt_token
+from app.core.errors import NotFoundError, ValidationError, ExternalServiceError, ErrorCode
+from app.core.responses import MessageResponse
+from app.core.middleware import get_request_id
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 settings = get_settings()
@@ -55,9 +61,9 @@ async def google_connect(
     Returns URL to redirect user to Google consent screen.
     """
     if not settings.google_client_id or not settings.google_client_secret:
-        raise HTTPException(
-            status_code=status.HTTP_501_NOT_IMPLEMENTED,
-            detail="Google integration not configured"
+        raise ValidationError(
+            message="Google integration not configured",
+            code=ErrorCode.EXTERNAL_GOOGLE_FAILED,
         )
 
     # Build OAuth URL
@@ -106,9 +112,9 @@ async def google_callback(
             )
 
         if response.status_code != 200:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Failed to exchange code for tokens"
+            raise ExternalServiceError(
+                service="google",
+                message="Failed to exchange code for tokens",
             )
 
         tokens = response.json()
@@ -122,10 +128,7 @@ async def google_callback(
         user = result.scalar_one_or_none()
 
         if not user:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found"
-            )
+            raise NotFoundError(resource="user", identifier=state)
 
         # Store tokens (encrypted)
         user.google_access_token = encrypt_token(tokens.get("access_token"))
@@ -142,9 +145,10 @@ async def google_callback(
         return RedirectResponse(url="/integrations/success?service=google")
 
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"OAuth callback failed: {str(e)}"
+        logger.exception(f"Google OAuth callback failed: {e}")
+        raise ExternalServiceError(
+            service="google",
+            message="OAuth callback failed. Please try again.",
         )
 
 
@@ -200,9 +204,10 @@ async def apple_connect(
         }
 
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Failed to connect to Apple: {str(e)}"
+        logger.exception(f"Failed to connect to Apple: {e}")
+        raise ExternalServiceError(
+            service="apple",
+            message=f"Failed to connect to Apple: {str(e)}",
         )
 
 
@@ -227,9 +232,9 @@ async def test_google_connection(
 ):
     """Test Google connection by listing upcoming events."""
     if not current_user.google_access_token:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Google not connected"
+        raise ValidationError(
+            message="Google not connected",
+            code=ErrorCode.NOT_FOUND_INTEGRATION,
         )
 
     try:
@@ -252,9 +257,10 @@ async def test_google_connection(
         }
 
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Connection test failed: {str(e)}"
+        logger.exception(f"Google connection test failed: {e}")
+        raise ExternalServiceError(
+            service="google",
+            message="Connection test failed. Please try reconnecting.",
         )
 
 
@@ -264,9 +270,9 @@ async def test_apple_connection(
 ):
     """Test Apple connection by listing calendars."""
     if not current_user.apple_caldav_password:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Apple not connected"
+        raise ValidationError(
+            message="Apple not connected",
+            code=ErrorCode.NOT_FOUND_INTEGRATION,
         )
 
     try:
@@ -285,7 +291,8 @@ async def test_apple_connection(
         }
 
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Connection test failed: {str(e)}"
+        logger.exception(f"Apple connection test failed: {e}")
+        raise ExternalServiceError(
+            service="apple",
+            message="Connection test failed. Please try reconnecting.",
         )

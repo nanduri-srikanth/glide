@@ -268,6 +268,7 @@ class VoiceService {
 
   /**
    * Add more content to an existing note with smart synthesis.
+   * Optimized for faster append operations with granular progress feedback.
    */
   async addToNote(
     noteId: string,
@@ -286,7 +287,7 @@ class VoiceService {
         return { error: 'Please provide text or audio' };
       }
 
-      onProgress?.(10, 'Preparing...');
+      onProgress?.(5, 'Preparing content...');
 
       const formData = new FormData();
 
@@ -302,7 +303,7 @@ class VoiceService {
           name: filename,
           type: fileType,
         } as unknown as Blob);
-        onProgress?.(20, 'Uploading audio...');
+        onProgress?.(15, 'Uploading audio...');
       }
 
       // Only add resynthesize if explicitly set (not undefined)
@@ -311,8 +312,14 @@ class VoiceService {
       }
       formData.append('auto_decide', autoDecide.toString());
 
-      onProgress?.(40, audioUri ? 'Transcribing...' : 'Processing...');
+      // Show appropriate progress based on operation type
+      if (audioUri) {
+        onProgress?.(35, 'Processing audio & transcribing...');
+      } else {
+        onProgress?.(35, 'Processing text...');
+      }
 
+      // Start the request - backend now runs upload+transcription in parallel
       const response = await api.postFormData<SmartSynthesisResponse>(
         `/voice/synthesize/${noteId}`,
         formData
@@ -320,6 +327,7 @@ class VoiceService {
 
       if (response.error) return { error: response.error.message };
 
+      onProgress?.(90, 'Updating note...');
       onProgress?.(100, 'Complete!');
       return { data: response.data };
     } catch (error) {

@@ -1,9 +1,10 @@
 """Folders router."""
+import logging
 from datetime import datetime
 from typing import Annotated, List
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy import select, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,6 +13,11 @@ from app.models.user import User
 from app.models.note import Note, Folder
 from app.routers.auth import get_current_user
 from app.schemas.note_schemas import FolderCreate, FolderUpdate, FolderResponse, FolderBulkReorder
+from app.core.errors import NotFoundError, ConflictError, ValidationError, ErrorCode
+from app.core.responses import MessageResponse
+from app.core.middleware import get_request_id
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -112,10 +118,7 @@ async def get_folder(
     folder = result.scalar_one_or_none()
 
     if not folder:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Folder not found"
-        )
+        raise NotFoundError(resource="folder", identifier=str(folder_id))
 
     # Get note count
     count_result = await db.execute(
@@ -130,7 +133,7 @@ async def get_folder(
     return response
 
 
-@router.post("", response_model=FolderResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=FolderResponse, status_code=201)
 async def create_folder(
     folder_data: FolderCreate,
     current_user: Annotated[User, Depends(get_current_user)],
@@ -144,9 +147,10 @@ async def create_folder(
         .where(Folder.name == folder_data.name)
     )
     if result.scalar_one_or_none():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Folder with this name already exists"
+        raise ConflictError(
+            message="Folder with this name already exists",
+            code=ErrorCode.CONFLICT_FOLDER_EXISTS,
+            param="name",
         )
 
     # Calculate depth if parent_id is provided
@@ -160,19 +164,18 @@ async def create_folder(
         )
         parent = result.scalar_one_or_none()
         if not parent:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Parent folder not found"
-            )
+            raise NotFoundError(resource="folder", identifier=str(parent_id))
         if parent.is_system:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Cannot nest folders under system folders"
+            raise ValidationError(
+                message="Cannot nest folders under system folders",
+                code=ErrorCode.VALIDATION_FAILED,
+                param="parent_id",
             )
         if parent.depth >= 2:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Maximum folder nesting depth (2) exceeded"
+            raise ValidationError(
+                message="Maximum folder nesting depth (2) exceeded",
+                code=ErrorCode.VALIDATION_FAILED,
+                param="parent_id",
             )
         depth = parent.depth + 1
 
@@ -251,15 +254,13 @@ async def update_folder(
     folder = result.scalar_one_or_none()
 
     if not folder:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Folder not found"
-        )
+        raise NotFoundError(resource="folder", identifier=str(folder_id))
 
     if folder.is_system:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Cannot modify system folders"
+        raise ValidationError(
+            message="Cannot modify system folders",
+            code=ErrorCode.VALIDATION_FAILED,
+            param="folder_id",
         )
 
     # Check for duplicate name if changing
@@ -271,9 +272,10 @@ async def update_folder(
             .where(Folder.id != folder_id)
         )
         if result.scalar_one_or_none():
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Folder with this name already exists"
+            raise ConflictError(
+                message="Folder with this name already exists",
+                code=ErrorCode.CONFLICT_FOLDER_EXISTS,
+                param="name",
             )
 
     # Handle parent_id change (nesting)
@@ -289,28 +291,28 @@ async def update_folder(
             )
             new_parent = result.scalar_one_or_none()
             if not new_parent:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Parent folder not found"
-                )
+                raise NotFoundError(resource="folder", identifier=str(new_parent_id))
             if new_parent.is_system:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Cannot nest folders under system folders"
+                raise ValidationError(
+                    message="Cannot nest folders under system folders",
+                    code=ErrorCode.VALIDATION_FAILED,
+                    param="parent_id",
                 )
             # Prevent circular nesting (can't nest into self or descendants)
             if new_parent_id == folder_id:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Cannot nest a folder into itself"
+                raise ValidationError(
+                    message="Cannot nest a folder into itself",
+                    code=ErrorCode.VALIDATION_FAILED,
+                    param="parent_id",
                 )
             # Check if new_parent is a descendant of folder
             check_parent = new_parent
             while check_parent.parent_id:
                 if check_parent.parent_id == folder_id:
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail="Cannot nest a folder into its own descendant"
+                    raise ValidationError(
+                        message="Cannot nest a folder into its own descendant",
+                        code=ErrorCode.VALIDATION_FAILED,
+                        param="parent_id",
                     )
                 result = await db.execute(
                     select(Folder).where(Folder.id == check_parent.parent_id)
@@ -324,9 +326,10 @@ async def update_folder(
             max_child_depth = await get_folder_max_child_depth(db, folder_id)
             child_depth_offset = max_child_depth - folder.depth if max_child_depth > 0 else 0
             if new_depth + child_depth_offset > 2:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Maximum folder nesting depth (2) exceeded"
+                raise ValidationError(
+                    message="Maximum folder nesting depth (2) exceeded",
+                    code=ErrorCode.VALIDATION_FAILED,
+                    param="parent_id",
                 )
             update_data['depth'] = new_depth
             # Update children depths
@@ -389,10 +392,7 @@ async def reorder_folders(
     # Validate and update each folder
     for item in reorder_data.folders:
         if item.id not in user_folders:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Folder {item.id} not found"
-            )
+            raise NotFoundError(resource="folder", identifier=str(item.id))
 
         folder = user_folders[item.id]
 
@@ -404,27 +404,27 @@ async def reorder_folders(
         new_depth = 0
         if item.parent_id:
             if item.parent_id not in user_folders:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Parent folder {item.parent_id} not found"
-                )
+                raise NotFoundError(resource="folder", identifier=str(item.parent_id))
             parent = user_folders[item.parent_id]
             if parent.is_system:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Cannot nest folders under system folders"
+                raise ValidationError(
+                    message="Cannot nest folders under system folders",
+                    code=ErrorCode.VALIDATION_FAILED,
+                    param="parent_id",
                 )
             # Prevent circular nesting
             if item.parent_id == item.id:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Cannot nest a folder into itself"
+                raise ValidationError(
+                    message="Cannot nest a folder into itself",
+                    code=ErrorCode.VALIDATION_FAILED,
+                    param="parent_id",
                 )
             new_depth = parent.depth + 1
             if new_depth > 2:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Maximum folder nesting depth (2) exceeded"
+                raise ValidationError(
+                    message="Maximum folder nesting depth (2) exceeded",
+                    code=ErrorCode.VALIDATION_FAILED,
+                    param="parent_id",
                 )
 
         # Update folder
@@ -442,7 +442,7 @@ async def reorder_folders(
     return {"message": "Folders reordered successfully"}
 
 
-@router.delete("/{folder_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{folder_id}", status_code=204)
 async def delete_folder(
     folder_id: UUID,
     current_user: Annotated[User, Depends(get_current_user)],
@@ -461,15 +461,13 @@ async def delete_folder(
     folder = result.scalar_one_or_none()
 
     if not folder:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Folder not found"
-        )
+        raise NotFoundError(resource="folder", identifier=str(folder_id))
 
     if folder.is_system:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Cannot delete system folders"
+        raise ValidationError(
+            message="Cannot delete system folders",
+            code=ErrorCode.VALIDATION_FAILED,
+            param="folder_id",
         )
 
     # Move notes to another folder or unassign
@@ -481,10 +479,7 @@ async def delete_folder(
             .where(Folder.user_id == current_user.id)
         )
         if not result.scalar_one_or_none():
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Target folder not found"
-            )
+            raise NotFoundError(resource="folder", identifier=str(move_notes_to))
 
     # Update notes - move to target folder or unassign
     await db.execute(

@@ -1,15 +1,16 @@
 """Authentication router."""
+import logging
 from datetime import datetime
 from typing import Annotated, Optional
 from uuid import UUID
 import secrets
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Request
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-import jwt
+from jose import JWTError
 
 from app.database import get_db
 from app.models.user import User
@@ -27,7 +28,20 @@ from app.utils.auth import (
     create_refresh_token,
     verify_token,
 )
+from app.utils.apple import verify_apple_identity_token
 from app.config import get_settings
+from app.core.errors import (
+    ErrorCode,
+    ValidationError,
+    AuthenticationError,
+    AuthorizationError,
+    ConflictError,
+    ExternalServiceError,
+)
+from app.core.responses import MessageResponse
+from app.core.middleware import get_request_id
+
+logger = logging.getLogger(__name__)
 
 
 class AppleSignInRequest(BaseModel):
@@ -37,6 +51,11 @@ class AppleSignInRequest(BaseModel):
     user_id: str
     email: Optional[str] = None
     full_name: Optional[str] = None
+
+
+class RefreshTokenRequest(BaseModel):
+    """Refresh token request data."""
+    refresh_token: str
 
 router = APIRouter()
 settings = get_settings()
@@ -49,19 +68,19 @@ async def get_current_user(
     db: AsyncSession = Depends(get_db)
 ) -> User:
     """Get current authenticated user from JWT token."""
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-
     payload = verify_token(token, token_type="access")
     if payload is None:
-        raise credentials_exception
+        raise AuthenticationError(
+            message="Invalid or expired access token",
+            code=ErrorCode.AUTH_INVALID_TOKEN,
+        )
 
     user_id = payload.get("sub")
     if user_id is None:
-        raise credentials_exception
+        raise AuthenticationError(
+            message="Invalid token payload",
+            code=ErrorCode.AUTH_INVALID_TOKEN,
+        )
 
     result = await db.execute(
         select(User).where(User.id == UUID(user_id))
@@ -69,18 +88,21 @@ async def get_current_user(
     user = result.scalar_one_or_none()
 
     if user is None:
-        raise credentials_exception
+        raise AuthenticationError(
+            message="User not found",
+            code=ErrorCode.AUTH_INVALID_TOKEN,
+        )
 
     if not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="User account is disabled"
+        raise AuthorizationError(
+            message="User account is disabled",
+            code=ErrorCode.PERMISSION_ACCOUNT_INACTIVE,
         )
 
     return user
 
 
-@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/register", response_model=UserResponse, status_code=201)
 async def register(
     user_data: UserCreate,
     db: AsyncSession = Depends(get_db)
@@ -91,9 +113,10 @@ async def register(
         select(User).where(User.email == user_data.email)
     )
     if result.scalar_one_or_none():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email already registered"
+        raise ConflictError(
+            message="Email already registered",
+            code=ErrorCode.CONFLICT_EMAIL_EXISTS,
+            param="email",
         )
 
     # Create user
@@ -122,16 +145,15 @@ async def login(
     user = result.scalar_one_or_none()
 
     if not user or not verify_password(form_data.password, user.hashed_password):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password",
-            headers={"WWW-Authenticate": "Bearer"},
+        raise ValidationError(
+            message="Incorrect email or password",
+            code=ErrorCode.VALIDATION_INVALID_CREDENTIALS,
         )
 
     if not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="User account is disabled"
+        raise AuthorizationError(
+            message="User account is disabled",
+            code=ErrorCode.PERMISSION_ACCOUNT_INACTIVE,
         )
 
     # Create tokens
@@ -147,16 +169,16 @@ async def login(
 
 
 @router.post("/refresh", response_model=Token)
-async def refresh_token(
-    refresh_token: str,
+async def refresh_token_endpoint(
+    request: RefreshTokenRequest,
     db: AsyncSession = Depends(get_db)
 ):
     """Get a new access token using refresh token."""
-    payload = verify_token(refresh_token, token_type="refresh")
+    payload = verify_token(request.refresh_token, token_type="refresh")
     if payload is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid refresh token",
+        raise AuthenticationError(
+            message="Invalid or expired refresh token",
+            code=ErrorCode.AUTH_INVALID_REFRESH_TOKEN,
         )
 
     user_id = payload.get("sub")
@@ -165,10 +187,16 @@ async def refresh_token(
     )
     user = result.scalar_one_or_none()
 
-    if not user or not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User not found or inactive",
+    if not user:
+        raise AuthenticationError(
+            message="User not found",
+            code=ErrorCode.AUTH_INVALID_REFRESH_TOKEN,
+        )
+
+    if not user.is_active:
+        raise AuthorizationError(
+            message="User account is disabled",
+            code=ErrorCode.PERMISSION_ACCOUNT_INACTIVE,
         )
 
     # Create new tokens
@@ -214,35 +242,44 @@ async def update_me(
     return current_user
 
 
-@router.post("/change-password")
+@router.post("/change-password", response_model=MessageResponse)
 async def change_password(
     password_data: PasswordChange,
     current_user: Annotated[User, Depends(get_current_user)],
+    request: Request,
     db: AsyncSession = Depends(get_db)
 ):
     """Change user password."""
     if not verify_password(password_data.current_password, current_user.hashed_password):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Incorrect current password"
+        raise ValidationError(
+            message="Incorrect current password",
+            code=ErrorCode.VALIDATION_INVALID_CREDENTIALS,
+            param="current_password",
         )
 
     current_user.hashed_password = get_password_hash(password_data.new_password)
     current_user.updated_at = datetime.utcnow()
     await db.commit()
 
-    return {"message": "Password changed successfully"}
+    return MessageResponse(
+        message="Password changed successfully",
+        request_id=get_request_id(request),
+    )
 
 
-@router.post("/logout")
+@router.post("/logout", response_model=MessageResponse)
 async def logout(
-    current_user: Annotated[User, Depends(get_current_user)]
+    current_user: Annotated[User, Depends(get_current_user)],
+    request: Request,
 ):
     """Logout user (client should discard tokens)."""
     # In a more complete implementation, you might:
     # - Add the token to a blacklist
     # - Invalidate refresh tokens in database
-    return {"message": "Successfully logged out"}
+    return MessageResponse(
+        message="Successfully logged out",
+        request_id=get_request_id(request),
+    )
 
 
 @router.post("/apple", response_model=Token)
@@ -252,28 +289,23 @@ async def apple_sign_in(
 ):
     """
     Handle Apple Sign-In.
-    Verifies the identity token and creates/retrieves user.
+    Verifies the identity token with Apple's public keys and creates/retrieves user.
     """
     try:
-        # Decode the identity token (without verification for now - in production,
-        # you should verify with Apple's public keys)
-        # The token is a JWT signed by Apple
-        decoded = jwt.decode(
-            apple_data.identity_token,
-            options={"verify_signature": False}  # In production, verify with Apple's keys
-        )
+        # Verify the identity token with Apple's public keys
+        # This validates: signature, issuer, audience, and expiration
+        token_payload = await verify_apple_identity_token(apple_data.identity_token)
 
-        apple_user_id = decoded.get("sub")
-        email = decoded.get("email") or apple_data.email
+        apple_user_id = token_payload.user_id
+        email = token_payload.email or apple_data.email
 
         if not apple_user_id:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid Apple identity token"
+            raise AuthenticationError(
+                message="Invalid Apple identity token: missing user ID",
+                code=ErrorCode.AUTH_INVALID_APPLE_TOKEN,
             )
 
-        # Try to find existing user by email or apple_user_id
-        # First, check if we have a user with this email
+        # Try to find existing user by email
         user = None
         if email:
             result = await db.execute(
@@ -290,7 +322,7 @@ async def apple_sign_in(
                 email=email or f"apple_{apple_user_id}@privaterelay.appleid.com",
                 hashed_password=get_password_hash(random_password),
                 full_name=apple_data.full_name,
-                is_verified=True,  # Apple verified the email
+                is_verified=token_payload.email_verified,
             )
             db.add(user)
             await db.commit()
@@ -300,6 +332,8 @@ async def apple_sign_in(
         access_token = create_access_token(subject=str(user.id))
         refresh_token = create_refresh_token(subject=str(user.id))
 
+        logger.info(f"Apple Sign-In successful for user: {user.id}")
+
         return Token(
             access_token=access_token,
             refresh_token=refresh_token,
@@ -307,8 +341,15 @@ async def apple_sign_in(
             expires_in=settings.access_token_expire_minutes * 60,
         )
 
-    except jwt.DecodeError:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid Apple identity token"
+    except JWTError as e:
+        logger.warning(f"Apple Sign-In failed: {e}")
+        raise AuthenticationError(
+            message="Invalid Apple identity token",
+            code=ErrorCode.AUTH_INVALID_APPLE_TOKEN,
+        )
+    except Exception as e:
+        logger.exception(f"Apple Sign-In unexpected error: {e}")
+        raise ExternalServiceError(
+            service="apple",
+            message="Apple Sign-In service temporarily unavailable",
         )

@@ -1,9 +1,10 @@
 """Actions router for executing calendar, email, and reminder actions."""
+import logging
 from datetime import datetime
 from typing import Annotated, Optional, List
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,6 +21,9 @@ from app.schemas.action_schemas import (
     ActionExecuteRequest,
     ActionExecuteResponse,
 )
+from app.core.errors import NotFoundError, ConflictError, ValidationError, ErrorCode, ExternalServiceError
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -73,10 +77,7 @@ async def get_action(
     action = result.scalar_one_or_none()
 
     if not action:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Action not found"
-        )
+        raise NotFoundError(resource="action", identifier=str(action_id))
 
     return ActionResponse.model_validate(action)
 
@@ -98,10 +99,7 @@ async def update_action(
     action = result.scalar_one_or_none()
 
     if not action:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Action not found"
-        )
+        raise NotFoundError(resource="action", identifier=str(action_id))
 
     update_data = action_data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
@@ -114,7 +112,7 @@ async def update_action(
     return ActionResponse.model_validate(action)
 
 
-@router.delete("/{action_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{action_id}", status_code=204)
 async def delete_action(
     action_id: UUID,
     current_user: Annotated[User, Depends(get_current_user)],
@@ -130,10 +128,7 @@ async def delete_action(
     action = result.scalar_one_or_none()
 
     if not action:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Action not found"
-        )
+        raise NotFoundError(resource="action", identifier=str(action_id))
 
     await db.delete(action)
     await db.commit()
@@ -158,15 +153,13 @@ async def execute_action(
     action = result.scalar_one_or_none()
 
     if not action:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Action not found"
-        )
+        raise NotFoundError(resource="action", identifier=str(action_id))
 
     if action.status == ActionStatus.EXECUTED:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Action already executed"
+        raise ConflictError(
+            message="Action already executed",
+            code=ErrorCode.CONFLICT_ACTION_EXECUTED,
+            param="action_id",
         )
 
     service = request.service.lower()
@@ -179,9 +172,10 @@ async def execute_action(
         elif action.action_type == ActionType.REMINDER:
             result = await _execute_reminder_action(action, current_user, service)
         else:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Cannot execute action type: {action.action_type}"
+            raise ValidationError(
+                message=f"Cannot execute action type: {action.action_type}",
+                code=ErrorCode.VALIDATION_INVALID_VALUE,
+                param="action_type",
             )
 
         # Update action status
@@ -206,9 +200,10 @@ async def execute_action(
         action.details = {**(action.details or {}), "error": str(e)}
         await db.commit()
 
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to execute action: {str(e)}"
+        logger.exception(f"Failed to execute action {action_id}: {e}")
+        raise ExternalServiceError(
+            service=service,
+            message=f"Failed to execute action: {str(e)}",
         )
 
 
@@ -318,10 +313,7 @@ async def complete_action(
     action = result.scalar_one_or_none()
 
     if not action:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Action not found"
-        )
+        raise NotFoundError(resource="action", identifier=str(action_id))
 
     action.status = ActionStatus.EXECUTED
     action.executed_at = datetime.utcnow()

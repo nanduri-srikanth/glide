@@ -1,9 +1,10 @@
 """Voice processing router - the core of Glide."""
+import logging
 from datetime import datetime
 from typing import Annotated, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
+from fastapi import APIRouter, Depends, UploadFile, File, Form
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,6 +24,14 @@ from app.schemas.voice_schemas import (
     InputHistoryEntry,
     UpdateDecision,
 )
+from app.core.errors import (
+    ErrorCode,
+    ValidationError,
+    NotFoundError,
+    ExternalServiceError,
+)
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -45,9 +54,10 @@ async def process_voice_memo(
     # Validate file type
     allowed_types = ["audio/mpeg", "audio/mp3", "audio/m4a", "audio/wav", "audio/x-m4a", "audio/mp4"]
     if audio_file.content_type not in allowed_types:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid audio format. Allowed: mp3, m4a, wav"
+        raise ValidationError(
+            message="Invalid audio format. Allowed: mp3, m4a, wav",
+            code=ErrorCode.VALIDATION_INVALID_AUDIO_FORMAT,
+            param="audio_file",
         )
 
     try:
@@ -227,9 +237,10 @@ async def process_voice_memo(
 
     except Exception as e:
         await db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to process voice memo: {str(e)}"
+        logger.exception(f"Failed to process voice memo: {e}")
+        raise ExternalServiceError(
+            service="transcription",
+            message="Failed to process voice memo. Please try again.",
         )
 
 
@@ -251,17 +262,18 @@ async def synthesize_note(
     """
     # Validate that at least one input is provided
     if not text_input and not audio_file:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="At least one of text_input or audio_file must be provided"
+        raise ValidationError(
+            message="At least one of text_input or audio_file must be provided",
+            code=ErrorCode.VALIDATION_MISSING_FIELD,
         )
 
     # Validate audio file type if provided
     allowed_types = ["audio/mpeg", "audio/mp3", "audio/m4a", "audio/wav", "audio/x-m4a", "audio/mp4"]
     if audio_file and audio_file.content_type not in allowed_types:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid audio format. Allowed: mp3, m4a, wav"
+        raise ValidationError(
+            message="Invalid audio format. Allowed: mp3, m4a, wav",
+            code=ErrorCode.VALIDATION_INVALID_AUDIO_FORMAT,
+            param="audio_file",
         )
 
     try:
@@ -271,26 +283,42 @@ async def synthesize_note(
         total_duration = 0
         audio_key = None
 
-        # Process audio if provided
+        # Process audio if provided - run upload and transcription in parallel
         if audio_file:
-            # Upload audio to storage
-            storage_service = StorageService()
-            audio_file.file.seek(0)
-            upload_result = await storage_service.upload_audio(
-                file=audio_file.file,
-                user_id=str(current_user.id),
-                filename=audio_file.filename or "recording.mp3",
-                content_type=audio_file.content_type,
-            )
-            audio_key = upload_result.get("key")
+            import asyncio
+            from io import BytesIO
 
-            # Transcribe audio
-            transcription_service = TranscriptionService()
+            # Read file content once for parallel operations
             audio_file.file.seek(0)
-            transcription = await transcription_service.transcribe(
-                audio_file=audio_file.file,
-                filename=audio_file.filename or "recording.mp3",
+            file_content = audio_file.file.read()
+            filename = audio_file.filename or "recording.mp3"
+            content_type = audio_file.content_type
+
+            storage_service = StorageService()
+            transcription_service = TranscriptionService()
+
+            # Create async tasks for parallel execution
+            async def upload_task():
+                return await storage_service.upload_audio(
+                    file=BytesIO(file_content),
+                    user_id=str(current_user.id),
+                    filename=filename,
+                    content_type=content_type,
+                )
+
+            async def transcribe_task():
+                return await transcription_service.transcribe(
+                    audio_file=BytesIO(file_content),
+                    filename=filename,
+                )
+
+            # Run both in parallel
+            upload_result, transcription = await asyncio.gather(
+                upload_task(),
+                transcribe_task(),
             )
+
+            audio_key = upload_result.get("key")
             audio_transcript = transcription.text
             total_duration = transcription.duration
 
@@ -499,9 +527,10 @@ async def synthesize_note(
 
     except Exception as e:
         await db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to synthesize note: {str(e)}"
+        logger.exception(f"Failed to synthesize note: {e}")
+        raise ExternalServiceError(
+            service="llm",
+            message="Failed to synthesize note. Please try again.",
         )
 
 
@@ -527,17 +556,18 @@ async def add_to_synthesis(
     """
     # Validate that at least one input is provided
     if not text_input and not audio_file:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="At least one of text_input or audio_file must be provided"
+        raise ValidationError(
+            message="At least one of text_input or audio_file must be provided",
+            code=ErrorCode.VALIDATION_MISSING_FIELD,
         )
 
     # Validate audio file type if provided
     allowed_types = ["audio/mpeg", "audio/mp3", "audio/m4a", "audio/wav", "audio/x-m4a", "audio/mp4"]
     if audio_file and audio_file.content_type not in allowed_types:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid audio format. Allowed: mp3, m4a, wav"
+        raise ValidationError(
+            message="Invalid audio format. Allowed: mp3, m4a, wav",
+            code=ErrorCode.VALIDATION_INVALID_AUDIO_FORMAT,
+            param="audio_file",
         )
 
     # Verify note exists and belongs to user
@@ -547,10 +577,7 @@ async def add_to_synthesis(
     note = result.scalar_one_or_none()
 
     if not note:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Note not found"
-        )
+        raise NotFoundError(resource="note", identifier=str(note_id))
 
     try:
         now = datetime.utcnow()
@@ -559,24 +586,42 @@ async def add_to_synthesis(
         audio_transcript = ""
         new_duration = 0
 
-        # Process audio if provided
+        # Process audio if provided - run upload and transcription in parallel
         if audio_file:
-            storage_service = StorageService()
-            audio_file.file.seek(0)
-            upload_result = await storage_service.upload_audio(
-                file=audio_file.file,
-                user_id=str(current_user.id),
-                filename=audio_file.filename or "recording_add.mp3",
-                content_type=audio_file.content_type,
-            )
-            audio_key = upload_result.get("key")
+            import asyncio
+            from io import BytesIO
 
-            transcription_service = TranscriptionService()
+            # Read file content once for parallel operations
             audio_file.file.seek(0)
-            transcription = await transcription_service.transcribe(
-                audio_file=audio_file.file,
-                filename=audio_file.filename or "recording_add.mp3",
+            file_content = audio_file.file.read()
+            filename = audio_file.filename or "recording_add.mp3"
+            content_type = audio_file.content_type
+
+            storage_service = StorageService()
+            transcription_service = TranscriptionService()
+
+            # Create async tasks for parallel execution
+            async def upload_task():
+                return await storage_service.upload_audio(
+                    file=BytesIO(file_content),
+                    user_id=str(current_user.id),
+                    filename=filename,
+                    content_type=content_type,
+                )
+
+            async def transcribe_task():
+                return await transcription_service.transcribe(
+                    audio_file=BytesIO(file_content),
+                    filename=filename,
+                )
+
+            # Run both in parallel
+            upload_result, transcription = await asyncio.gather(
+                upload_task(),
+                transcribe_task(),
             )
+
+            audio_key = upload_result.get("key")
             audio_transcript = transcription.text
             new_duration = transcription.duration
 
@@ -835,9 +880,10 @@ async def add_to_synthesis(
 
     except Exception as e:
         await db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to add to note: {str(e)}"
+        logger.exception(f"Failed to add to note {note_id}: {e}")
+        raise ExternalServiceError(
+            service="llm",
+            message="Failed to add content to note. Please try again.",
         )
 
 
@@ -861,10 +907,7 @@ async def resynthesize_note(
     note = result.scalar_one_or_none()
 
     if not note:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Note not found"
-        )
+        raise NotFoundError(resource="note", identifier=str(note_id))
 
     try:
         now = datetime.utcnow()
@@ -957,9 +1000,10 @@ async def resynthesize_note(
 
     except Exception as e:
         await db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to resynthesize note: {str(e)}"
+        logger.exception(f"Failed to resynthesize note {note_id}: {e}")
+        raise ExternalServiceError(
+            service="llm",
+            message="Failed to resynthesize note. Please try again.",
         )
 
 
@@ -985,10 +1029,7 @@ async def delete_input(
     note = result.scalar_one_or_none()
 
     if not note:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Note not found"
-        )
+        raise NotFoundError(resource="note", identifier=str(note_id))
 
     try:
         ai_metadata = note.ai_metadata or {}
@@ -996,16 +1037,18 @@ async def delete_input(
 
         # Validate index
         if input_index < 0 or input_index >= len(input_history):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid input index. Note has {len(input_history)} inputs (0-{len(input_history) - 1})"
+            raise ValidationError(
+                message=f"Invalid input index. Note has {len(input_history)} inputs (0-{len(input_history) - 1})",
+                code=ErrorCode.VALIDATION_INVALID_VALUE,
+                param="input_index",
             )
 
         # Check if this is the last input
         if len(input_history) <= 1:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Cannot delete the last input. Use delete note instead."
+            raise ValidationError(
+                message="Cannot delete the last input. Use delete note instead.",
+                code=ErrorCode.VALIDATION_FAILED,
+                param="input_index",
             )
 
         # Remove the input
@@ -1094,13 +1137,14 @@ async def delete_input(
             updated_at=note.updated_at or note.created_at,
         )
 
-    except HTTPException:
+    except (ValidationError, NotFoundError):
         raise
     except Exception as e:
         await db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to delete input: {str(e)}"
+        logger.exception(f"Failed to delete input {input_index} from note {note_id}: {e}")
+        raise ExternalServiceError(
+            service="llm",
+            message="Failed to delete input. Please try again.",
         )
 
 
@@ -1124,9 +1168,10 @@ async def append_to_note(
     # Validate file type
     allowed_types = ["audio/mpeg", "audio/mp3", "audio/m4a", "audio/wav", "audio/x-m4a", "audio/mp4"]
     if audio_file.content_type not in allowed_types:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid audio format. Allowed: mp3, m4a, wav"
+        raise ValidationError(
+            message="Invalid audio format. Allowed: mp3, m4a, wav",
+            code=ErrorCode.VALIDATION_INVALID_AUDIO_FORMAT,
+            param="audio_file",
         )
 
     # 1. Verify note exists and belongs to user
@@ -1136,10 +1181,7 @@ async def append_to_note(
     note = result.scalar_one_or_none()
 
     if not note:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Note not found"
-        )
+        raise NotFoundError(resource="note", identifier=str(note_id))
 
     try:
         # 2. Upload audio to storage
@@ -1292,9 +1334,10 @@ async def append_to_note(
 
     except Exception as e:
         await db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to append to note: {str(e)}"
+        logger.exception(f"Failed to append to note {note_id}: {e}")
+        raise ExternalServiceError(
+            service="transcription",
+            message="Failed to append to note. Please try again.",
         )
 
 
@@ -1308,9 +1351,10 @@ async def transcribe_only(
     """
     allowed_types = ["audio/mpeg", "audio/mp3", "audio/m4a", "audio/wav", "audio/x-m4a", "audio/mp4"]
     if audio_file.content_type not in allowed_types:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid audio format"
+        raise ValidationError(
+            message="Invalid audio format. Allowed: mp3, m4a, wav",
+            code=ErrorCode.VALIDATION_INVALID_AUDIO_FORMAT,
+            param="audio_file",
         )
 
     try:
@@ -1328,9 +1372,10 @@ async def transcribe_only(
         }
 
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Transcription failed: {str(e)}"
+        logger.exception(f"Transcription failed: {e}")
+        raise ExternalServiceError(
+            service="transcription",
+            message="Transcription failed. Please try again.",
         )
 
 
@@ -1357,9 +1402,10 @@ async def analyze_transcript(
         return extraction
 
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Analysis failed: {str(e)}"
+        logger.exception(f"Analysis failed: {e}")
+        raise ExternalServiceError(
+            service="llm",
+            message="Analysis failed. Please try again.",
         )
 
 
@@ -1383,9 +1429,10 @@ async def get_upload_url(
         return result
 
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to generate upload URL: {str(e)}"
+        logger.exception(f"Failed to generate upload URL: {e}")
+        raise ExternalServiceError(
+            service="storage",
+            message="Failed to generate upload URL. Please try again.",
         )
 
 

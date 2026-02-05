@@ -20,6 +20,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { NotesColors } from '@/constants/theme';
 import { useRecording } from '@/hooks/useRecording';
+import { useAudioPlayback } from '@/hooks/useAudioPlayback';
 
 interface AddContentModalProps {
   visible: boolean;
@@ -110,11 +111,23 @@ export function AddContentModal({
 
   const {
     isRecording,
+    isPaused,
     duration,
     startRecording,
     stopRecording,
+    pauseRecording,
+    resumeRecording,
     resetState,
   } = useRecording();
+
+  const {
+    isPlaying,
+    isLoaded: isPlaybackLoaded,
+    progress: playbackProgress,
+    togglePlayback,
+    reset: resetPlayback,
+    loadSound,
+  } = useAudioPlayback();
 
   const [localRecordingUri, setLocalRecordingUri] = useState<string | null>(null);
 
@@ -125,6 +138,7 @@ export function AddContentModal({
       setForceResynthesize(false);
       setLocalRecordingUri(null);
       resetState();
+      resetPlayback();
     }
   }, [visible]);
 
@@ -143,12 +157,16 @@ export function AddContentModal({
     const result = await stopRecording();
     if (result) {
       // Prefer localPath (permanent storage) over uri (temp)
-      setLocalRecordingUri(result.localPath || result.uri);
+      const audioUri = result.localPath || result.uri;
+      setLocalRecordingUri(audioUri);
+      // Pre-load for playback
+      loadSound(audioUri);
     }
   };
 
   const handleClearRecording = async () => {
     resetState();
+    resetPlayback();
     setLocalRecordingUri(null);
   };
 
@@ -240,26 +258,74 @@ export function AddContentModal({
 
                 {/* Audio section */}
                 <View style={styles.audioSection}>
-                  {isRecording ? (
-                    /* Recording in progress */
+                  {isRecording && !isPaused ? (
+                    /* Recording in progress - show pause and stop */
                     <View style={styles.recordingActive}>
+                      <TouchableOpacity
+                        style={styles.pauseRecordButton}
+                        onPress={pauseRecording}
+                      >
+                        <Ionicons name="pause" size={18} color="#FFFFFF" />
+                      </TouchableOpacity>
                       <MiniWaveform isActive={true} />
                       <Text style={styles.recordingTime}>{formatTime(duration)}</Text>
                       <TouchableOpacity
-                        style={styles.stopButton}
+                        style={styles.stopRecordButton}
                         onPress={handleStopRecording}
                       >
                         <View style={styles.stopIcon} />
                       </TouchableOpacity>
                     </View>
+                  ) : isRecording && isPaused ? (
+                    /* Recording paused - show resume and done */
+                    <View style={styles.recordingPaused}>
+                      <TouchableOpacity
+                        style={styles.resumeRecordButton}
+                        onPress={resumeRecording}
+                      >
+                        <Ionicons name="play" size={18} color="#FFFFFF" />
+                      </TouchableOpacity>
+                      <View style={styles.pausedIndicator}>
+                        <Ionicons name="pause" size={14} color={NotesColors.textSecondary} />
+                      </View>
+                      <Text style={styles.recordingTimePaused}>{formatTime(duration)}</Text>
+                      <TouchableOpacity
+                        style={styles.doneRecordButton}
+                        onPress={handleStopRecording}
+                      >
+                        <Ionicons name="checkmark" size={18} color="#FFFFFF" />
+                      </TouchableOpacity>
+                    </View>
                   ) : localRecordingUri ? (
-                    /* Has recording */
+                    /* Has recording - with playback controls */
                     <View style={styles.hasRecording}>
                       <View style={styles.recordingInfo}>
-                        <Ionicons name="checkmark-circle" size={20} color="#4CAF50" />
-                        <Text style={styles.recordingInfoText}>
-                          {formatTime(duration)} recorded
-                        </Text>
+                        <TouchableOpacity
+                          style={styles.playButton}
+                          onPress={() => togglePlayback(localRecordingUri)}
+                        >
+                          <Ionicons
+                            name={isPlaying ? 'pause' : 'play'}
+                            size={18}
+                            color="#FFFFFF"
+                          />
+                        </TouchableOpacity>
+                        <View style={styles.playbackInfo}>
+                          <Text style={styles.recordingInfoText}>
+                            {formatTime(duration)} recorded
+                          </Text>
+                          {/* Playback progress bar */}
+                          {isPlaybackLoaded && (
+                            <View style={styles.progressBarSmall}>
+                              <View
+                                style={[
+                                  styles.progressFillSmall,
+                                  { width: `${playbackProgress * 100}%` },
+                                ]}
+                              />
+                            </View>
+                          )}
+                        </View>
                       </View>
                       <TouchableOpacity
                         style={styles.clearButton}
@@ -431,10 +497,63 @@ const styles = StyleSheet.create({
   recordingActive: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
     backgroundColor: 'rgba(255, 59, 48, 0.1)',
     borderRadius: 12,
     padding: 12,
+    gap: 12,
+  },
+  recordingPaused: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    borderRadius: 12,
+    padding: 12,
+    gap: 12,
+  },
+  pauseRecordButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: NotesColors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  resumeRecordButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#4CAF50',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stopRecordButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#FF3B30',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  doneRecordButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#4CAF50',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pausedIndicator: {
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 12,
+    padding: 6,
+  },
+  recordingTimePaused: {
+    fontSize: 18,
+    fontWeight: '500',
+    color: NotesColors.textSecondary,
+    fontVariant: ['tabular-nums'],
   },
   waveformContainer: {
     flexDirection: 'row',
@@ -480,11 +599,36 @@ const styles = StyleSheet.create({
   recordingInfo: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 10,
+    flex: 1,
+  },
+  playButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#4CAF50',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  playbackInfo: {
+    flex: 1,
+    gap: 4,
   },
   recordingInfoText: {
     fontSize: 15,
     color: '#4CAF50',
+  },
+  progressBarSmall: {
+    height: 3,
+    backgroundColor: 'rgba(76, 175, 80, 0.2)',
+    borderRadius: 1.5,
+    overflow: 'hidden',
+    maxWidth: 120,
+  },
+  progressFillSmall: {
+    height: '100%',
+    backgroundColor: '#4CAF50',
+    borderRadius: 1.5,
   },
   clearButton: {
     padding: 8,
