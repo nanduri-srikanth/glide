@@ -11,11 +11,16 @@ import api from '@/services/api';
 // Navigation persistence key (must match useNavigationPersistence)
 const NAVIGATION_STATE_KEY = 'glide_last_route';
 
-// DEV MODE: Auto-login with test credentials
-// Set DEV_AUTO_LOGIN to true and provide test user credentials
-const DEV_AUTO_LOGIN = true;
-const DEV_TEST_EMAIL = 'devtest@glide.app';
-const DEV_TEST_PASSWORD = 'devtest123';
+// DEV MODE: Auto-login with test credentials for faster development
+// This bypasses the login screen during development to speed up testing
+//
+// To enable: Set EXPO_PUBLIC_DEV_AUTO_LOGIN=true in .env.local
+// To disable: Set EXPO_PUBLIC_DEV_AUTO_LOGIN=false or remove the variable
+//
+// IMPORTANT: Disable this to test the real authentication flow!
+const DEV_AUTO_LOGIN = process.env.EXPO_PUBLIC_DEV_AUTO_LOGIN === 'true';
+const DEV_TEST_EMAIL = process.env.EXPO_PUBLIC_DEV_TEST_EMAIL || 'devtest@glide.app';
+const DEV_TEST_PASSWORD = process.env.EXPO_PUBLIC_DEV_TEST_PASSWORD || 'test123';
 
 interface AuthContextType {
   user: User | null;
