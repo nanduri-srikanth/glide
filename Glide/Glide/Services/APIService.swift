@@ -18,7 +18,7 @@ class APIService: APIServiceProtocol {
 
     private let urlSession: URLSession
     private let keychainService: KeychainServiceProtocol
-    private var isRefreshing = false
+    private let refreshCoordinator: TokenRefreshCoordinator
 
     // MARK: - Initialization
 
@@ -27,6 +27,7 @@ class APIService: APIServiceProtocol {
         self.timeout = timeout
         self.logger = logger
         self.keychainService = KeychainService()
+        self.refreshCoordinator = TokenRefreshCoordinator()
 
         let configuration = URLSessionConfiguration.default
         configuration.timeoutIntervalForRequest = timeout
@@ -83,7 +84,8 @@ class APIService: APIServiceProtocol {
 
             case 401:
                 // Attempt token refresh on 401 Unauthorized
-                if try await refreshAccessTokenAndRetry(endpoint, method: method, body: body) as? T != nil {
+                if try await refreshAccessTokenAndRetry() {
+                    // Retry original request with new token
                     return try await request(endpoint, method: method, body: body)
                 }
                 throw APIError.unauthorized
@@ -116,78 +118,52 @@ class APIService: APIServiceProtocol {
 
     // MARK: - Token Refresh
 
-    private func refreshAccessTokenAndRetry<T: Decodable>(
-        _ endpoint: String,
-        method: HTTPMethod,
-        body: Data?
-    ) async throws -> T? {
-
-        // Prevent concurrent refresh attempts
-        guard !isRefreshing else {
-            return nil
-        }
-
-        isRefreshing = true
-        defer { isRefreshing = false }
+    /// Refresh access token using the refresh coordinator
+    /// This method is thread-safe and prevents concurrent refresh attempts
+    /// - Returns: True if refresh succeeded, false otherwise
+    private func refreshAccessTokenAndRetry() async throws -> Bool {
 
         guard let refreshToken = keychainService.get(key: "refresh_token") else {
-            return nil
+            logger.warning("No refresh token available", file: #file, function: #function, line: #line)
+            return false
         }
 
-        logger.debug("Attempting token refresh", file: #file, function: #function, line: #line)
-
-        // Create refresh request
-        guard let url = URL(string: "\(baseURL)/auth/refresh") else {
-            return nil
-        }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = HTTPMethod.post.rawValue
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-
-        let refreshBody = ["refresh_token": refreshToken]
-        request.httpBody = try? JSONEncoder().encode(refreshBody)
+        logger.debug("Attempting token refresh via coordinator", file: #file, function: #function, line: #line)
 
         do {
-            let (data, response) = try await urlSession.data(for: request)
+            // Use the coordinator to perform thread-safe refresh
+            let tokenResponse = try await refreshCoordinator.refresh(
+                using: refreshToken,
+                apiService: self,
+                baseURL: baseURL,
+                timeout: 30.0
+            )
 
-            guard let httpResponse = response as? HTTPURLResponse,
-                  httpResponse.statusCode == 200 else {
-                logger.warning("Token refresh failed", file: #file, function: #function, line: #line)
-                return nil
-            }
-
-            let tokenResponse = try JSONDecoder().decode(TokenRefreshResponse.self, from: data)
-
-            // Save new tokens
+            // Save new tokens to keychain
             try keychainService.set(key: "auth_token", value: tokenResponse.accessToken)
             try keychainService.set(key: "refresh_token", value: tokenResponse.refreshToken)
 
-            logger.info("Token refreshed successfully", file: #file, function: #function, line: #line)
+            logger.info("Token refreshed successfully via coordinator", file: #file, function: #function, line: #line)
 
-            // Return retry success indicator
-            return nil
+            // Log metrics
+            let metrics = await refreshCoordinator.getMetrics()
+            logger.debug("Token refresh metrics - Total: \(metrics.refreshCount), Concurrent avoided: \(metrics.concurrentRequestsAvoided), Last refresh: \(metrics.lastRefresh?.description ?? "never")",
+                       file: #file, function: #function, line: #line)
+
+            return true
 
         } catch {
-            logger.error("Token refresh error: \(error.localizedDescription)", file: #file, function: #function, line: #line)
-            return nil
+            logger.error("Token refresh failed: \(error.localizedDescription)", file: #file, function: #function, line: #line)
+
+            // If refresh failed with invalid token error, clear tokens to force re-login
+            if case AuthError.invalidCredentials = error {
+                try? keychainService.delete(key: "auth_token")
+                try? keychainService.delete(key: "refresh_token")
+                logger.warning("Cleared invalid tokens", file: #file, function: #function, line: #line)
+            }
+
+            return false
         }
-    }
-}
-
-// MARK: - Token Refresh Response
-
-private struct TokenRefreshResponse: Codable {
-    let accessToken: String
-    let refreshToken: String
-    let tokenType: String
-    let expiresIn: Int
-
-    enum CodingKeys: String, CodingKey {
-        case accessToken = "access_token"
-        case refreshToken = "refresh_token"
-        case tokenType = "token_type"
-        case expiresIn = "expires_in"
     }
 }
 

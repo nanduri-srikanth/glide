@@ -69,7 +69,7 @@ class AuthViewModel: ObservableObject {
         errorMessage = nil
 
         do {
-            logger.info("Attempting login for \(email)", file: #file, function: #function, line: #line)
+            logger.info("Login attempt initiated", file: #file, function: #function, line: #line)
             try await authService.login(email: email, password: password)
 
             // Update app state
@@ -99,7 +99,7 @@ class AuthViewModel: ObservableObject {
         errorMessage = nil
 
         do {
-            logger.info("Attempting registration for \(email)", file: #file, function: #function, line: #line)
+            logger.info("Registration attempt initiated", file: #file, function: #function, line: #line)
             try await authService.register(email: email, password: password, name: name)
 
             // Update app state
@@ -132,11 +132,34 @@ class AuthViewModel: ObservableObject {
             }
 
             logger.info("Logout successful", file: #file, function: #function, line: #line)
+        } catch let authError as AuthError {
+            await MainActor.run {
+                isLoading = false
+
+                switch authError {
+                case .partialLogout:
+                    // For partial logout, still clear authentication state but warn user
+                    AppState.shared.setAuthenticated(false, userId: nil)
+                    isAuthenticated = false
+                    errorMessage = authError.localizedDescription
+                    logger.warning("Partial logout completed: \(authError.localizedDescription)", file: #file, function: #function, line: #line)
+
+                case .logoutFailed:
+                    // For complete logout failure, don't clear authentication state
+                    errorMessage = authError.localizedDescription
+                    logger.error("Logout failed: \(authError.localizedDescription)", file: #file, function: #function, line: #line)
+
+                default:
+                    // Other auth errors
+                    errorMessage = authError.localizedDescription
+                    logger.error("Logout error: \(authError.localizedDescription)", file: #file, function: #function, line: #line)
+                }
+            }
         } catch {
             await MainActor.run {
                 isLoading = false
                 errorMessage = error.localizedDescription
-                logger.error("Logout failed: \(error.localizedDescription)", file: #file, function: #function, line: #line)
+                logger.error("Logout failed with unexpected error: \(error.localizedDescription)", file: #file, function: #function, line: #line)
             }
         }
     }
