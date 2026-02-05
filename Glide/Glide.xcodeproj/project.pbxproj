@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		2ADC9F982F34ED7400E9BCA8 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 2ADC9F972F34ED7400E9BCA8 /* GRDB */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		2AB032232F345C220076ABF7 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -52,6 +56,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				2ADC9F982F34ED7400E9BCA8 /* GRDB in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -78,6 +83,7 @@
 				2AB032172F345C210076ABF7 /* Glide */,
 				2AB032252F345C220076ABF7 /* GlideTests */,
 				2AB0322F2F345C220076ABF7 /* GlideUITests */,
+				2ADC9F962F34ED7400E9BCA8 /* Frameworks */,
 				2AB032162F345C210076ABF7 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -90,6 +96,13 @@
 				2AB0322C2F345C220076ABF7 /* GlideUITests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		2ADC9F962F34ED7400E9BCA8 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -112,6 +125,7 @@
 			);
 			name = Glide;
 			packageProductDependencies = (
+				2ADC9F972F34ED7400E9BCA8 /* GRDB */,
 			);
 			productName = Glide;
 			productReference = 2AB032152F345C210076ABF7 /* Glide.app */;
@@ -637,6 +651,14 @@
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		2ADC9F972F34ED7400E9BCA8 /* GRDB */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 2ADC9F422F346ECE00E9BCA8 /* XCRemoteSwiftPackageReference "GRDB" */;
+			productName = GRDB;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 2AB0320D2F345C210076ABF7 /* Project object */;
 }

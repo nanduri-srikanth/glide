@@ -7,6 +7,7 @@
 
 import Foundation
 import SwiftUI
+import Combine
 
 /// Global application state management
 /// Provides a centralized way to manage app-wide state and notifications
@@ -98,7 +99,7 @@ class AppState: ObservableObject {
 
 // MARK: - App Theme
 
-enum AppTheme: String, CaseIterable {
+enum AppTheme: String, CaseIterable, Codable {
     case light
     case dark
     case system

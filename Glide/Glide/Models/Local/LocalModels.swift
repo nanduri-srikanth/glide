@@ -148,6 +148,50 @@ struct LocalNote: Codable, Identifiable, Equatable {
         self.lastSyncAttempt = nil
     }
 
+    // MARK: - Memberwise Initializer
+    
+    init(
+        id: UUID,
+        title: String,
+        transcript: String,
+        summary: String? = nil,
+        duration: Int? = nil,
+        audioUrl: String? = nil,
+        folderId: UUID? = nil,
+        folderName: String? = nil,
+        tags: [String] = [],
+        isPinned: Bool = false,
+        isArchived: Bool = false,
+        aiProcessed: Bool = false,
+        actions: [ActionResponse] = [],
+        createdAt: Date,
+        updatedAt: Date,
+        localAudioPath: String? = nil,
+        syncStatus: SyncStatus = .pending,
+        syncError: String? = nil,
+        lastSyncAttempt: Date? = nil
+    ) {
+        self.id = id
+        self.title = title
+        self.transcript = transcript
+        self.summary = summary
+        self.duration = duration
+        self.audioUrl = audioUrl
+        self.folderId = folderId
+        self.folderName = folderName
+        self.tags = tags
+        self.isPinned = isPinned
+        self.isArchived = isArchived
+        self.aiProcessed = aiProcessed
+        self.actions = actions
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.localAudioPath = localAudioPath
+        self.syncStatus = syncStatus
+        self.syncError = syncError
+        self.lastSyncAttempt = lastSyncAttempt
+    }
+
     // MARK: - Convert to API Request
 
     func toCreateRequest() -> NoteCreateRequest {
@@ -240,6 +284,42 @@ struct LocalFolder: Codable, Identifiable, Equatable {
         self.syncError = nil
         self.lastSyncAttempt = nil
         self.isLocalDeleted = false
+    }
+
+    // MARK: - Memberwise Initializer
+    
+    init(
+        id: UUID,
+        name: String,
+        icon: String,
+        color: String? = nil,
+        isSystem: Bool = false,
+        noteCount: Int = 0,
+        sortOrder: Int = 0,
+        parentId: UUID? = nil,
+        depth: Int = 0,
+        children: [LocalFolder] = [],
+        createdAt: Date,
+        syncStatus: SyncStatus = .pending,
+        syncError: String? = nil,
+        lastSyncAttempt: Date? = nil,
+        isLocalDeleted: Bool = false
+    ) {
+        self.id = id
+        self.name = name
+        self.icon = icon
+        self.color = color
+        self.isSystem = isSystem
+        self.noteCount = noteCount
+        self.sortOrder = sortOrder
+        self.parentId = parentId
+        self.depth = depth
+        self.children = children
+        self.createdAt = createdAt
+        self.syncStatus = syncStatus
+        self.syncError = syncError
+        self.lastSyncAttempt = lastSyncAttempt
+        self.isLocalDeleted = isLocalDeleted
     }
 
     // MARK: - Convert to API Request

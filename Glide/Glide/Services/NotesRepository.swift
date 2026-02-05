@@ -70,9 +70,12 @@ class NotesRepository: NotesRepositoryProtocol {
     }
 
     func deleteNote(id: String) async throws {
-        _ = try await apiService.request("/notes/\(id)", method: .delete, body: nil)
+        // DELETE requests may return an empty response
+        let _: EmptyResponse = try await apiService.request("/notes/\(id)", method: .delete, body: nil)
 
         // Remove from cache
         cachedNotes.removeAll { $0.id == id }
     }
 }
+
+

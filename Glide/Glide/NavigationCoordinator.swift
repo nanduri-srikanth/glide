@@ -6,11 +6,16 @@
 //
 
 import SwiftUI
+import Combine
 
 /// Navigation Coordinator for managing app navigation
 /// Handles navigation stack and deep linking
 @MainActor
 class NavigationCoordinator: ObservableObject {
+
+    // MARK: - Singleton
+
+    static let shared = NavigationCoordinator()
 
     // MARK: - Published Properties
 
@@ -22,6 +27,12 @@ class NavigationCoordinator: ObservableObject {
 
     /// Currently presented alert
     @Published var presentedAlert: Alert?
+
+    // MARK: - Initialization
+
+    private init() {
+        // Private initializer for singleton
+    }
 
     // MARK: - Types
 

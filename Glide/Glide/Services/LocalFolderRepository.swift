@@ -28,51 +28,35 @@ class LocalFolderRepository {
     /// Fetch all folders
     func fetchAll() throws -> [Folder] {
         return try database.read { database in
-            let request = SQLRequest<Folder>(
-                sql: """
+            return try Folder.fetchAll(database, sql: """
                 SELECT * FROM folders
                 WHERE is_local_deleted = 0
                 ORDER BY sort_order ASC
-                """
-            )
-
-            return try Row.fetchAll(database, request)
-                .compactMap { try? Folder.decodeRow($0) }
+                """)
         }
     }
 
     /// Fetch root folders (no parent)
     func fetchRootFolders() throws -> [Folder] {
         return try database.read { database in
-            let request = SQLRequest<Folder>(
-                sql: """
+            return try Folder.fetchAll(database, sql: """
                 SELECT * FROM folders
                 WHERE parent_id IS NULL
                 AND is_local_deleted = 0
                 ORDER BY sort_order ASC
-                """
-            )
-
-            return try Row.fetchAll(database, request)
-                .compactMap { try? Folder.decodeRow($0) }
+                """)
         }
     }
 
     /// Fetch child folders by parent ID
     func fetchChildren(parentId: String) throws -> [Folder] {
         return try database.read { database in
-            let request = SQLRequest<Folder>(
-                sql: """
+            return try Folder.fetchAll(database, sql: """
                 SELECT * FROM folders
                 WHERE parent_id = ?
                 AND is_local_deleted = 0
                 ORDER BY sort_order ASC
-                """,
-                arguments: [parentId]
-            )
-
-            return try Row.fetchAll(database, request)
-                .compactMap { try? Folder.decodeRow($0) }
+                """, arguments: [parentId])
         }
     }
 
@@ -91,8 +75,9 @@ class LocalFolderRepository {
         for folder in allFolders {
             let node = folderMap[folder.id]!
 
-            if let parentId = folder.parentId, let parentNode = folderMap[parentId] {
-                parentNode.children.append(node)
+            if let parentId = folder.parentId {
+                // Modify the parent node's children array
+                folderMap[parentId]?.children.append(node)
             } else {
                 rootNodes.append(node)
             }
@@ -104,16 +89,7 @@ class LocalFolderRepository {
     /// Fetch folder by ID
     func fetchById(id: String) throws -> Folder? {
         return try database.read { database in
-            let request = SQLRequest<Folder>(
-                sql: "SELECT * FROM folders WHERE id = ?",
-                arguments: [id]
-            )
-
-            guard let row = try Row.fetchOne(database, request) else {
-                return nil
-            }
-
-            return try Folder.decodeRow(row)
+            return try Folder.fetchOne(database, sql: "SELECT * FROM folders WHERE id = ?", arguments: [id])
         }
     }
 
@@ -137,7 +113,7 @@ class LocalFolderRepository {
     /// Insert a new folder
     func insert(_ folder: Folder) throws {
         try database.write { database in
-            try folder.encodeRow(database)
+            try folder.insert(database)
         }
         logger.debug("Folder inserted: \(folder.id)")
     }
@@ -145,7 +121,7 @@ class LocalFolderRepository {
     /// Update an existing folder
     func update(_ folder: Folder) throws {
         try database.write { database in
-            try folder.encodeRow(database)
+            try folder.update(database)
         }
         logger.debug("Folder updated: \(folder.id)")
     }
@@ -181,7 +157,7 @@ class LocalFolderRepository {
                 SET parent_id = ?, sort_order = ?, updated_at = ?
                 WHERE id = ?
                 """,
-                arguments: [toParentId, newSortOrder, Date(), folderId]
+                arguments: [toParentId as String?, newSortOrder, Date(), folderId]
             )
         }
         logger.debug("Folder moved: \(folderId)")
@@ -190,19 +166,15 @@ class LocalFolderRepository {
     /// Get next sort order for siblings
     func getNextSortOrder(parentId: String?) throws -> Int {
         return try database.read { database in
-            let sql: String
-            let arguments: [Any?]
-
             if let parentId = parentId {
-                sql = "SELECT MAX(sort_order) FROM folders WHERE parent_id = ?"
-                arguments = [parentId]
+                let sql = "SELECT MAX(sort_order) FROM folders WHERE parent_id = ?"
+                let maxOrder = try Int.fetchOne(database, sql: sql, arguments: [parentId]) ?? 0
+                return maxOrder + 1
             } else {
-                sql = "SELECT MAX(sort_order) FROM folders WHERE parent_id IS NULL"
-                arguments = []
+                let sql = "SELECT MAX(sort_order) FROM folders WHERE parent_id IS NULL"
+                let maxOrder = try Int.fetchOne(database, sql: sql) ?? 0
+                return maxOrder + 1
             }
-
-            let maxOrder = try Int.fetchOne(database, sql: sql, arguments: StatementArguments(arguments)) ?? 0
-            return maxOrder + 1
         }
     }
 
@@ -251,8 +223,8 @@ struct FolderNode {
 extension Folder: FetchableRecord, PersistableRecord {
 
     /// Decode Folder from database row
-    static func decodeRow(_ row: Row) throws -> Folder {
-        return Folder(
+    init(row: Row) throws {
+        self.init(
             id: row["id"],
             name: row["name"],
             emoji: row["emoji"],
@@ -264,27 +236,15 @@ extension Folder: FetchableRecord, PersistableRecord {
         )
     }
 
-    /// Encode Folder to database
-    func encodeRow(_ database: Database) throws {
-        // Use upsert to handle both insert and update
-        try database.execute(
-            sql: """
-            INSERT INTO folders (
-                id, name, emoji, color, parent_id, sort_order,
-                created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET
-                name = excluded.name,
-                emoji = excluded.emoji,
-                color = excluded.color,
-                parent_id = excluded.parent_id,
-                sort_order = excluded.sort_order,
-                updated_at = excluded.updated_at
-            """,
-            arguments: [
-                id, name, emoji, color, parentId, sortOrder,
-                createdAt, updatedAt
-            ]
-        )
+    /// Encode Folder to database (EncodableRecord conformance)
+    func encode(to container: inout PersistenceContainer) throws {
+        container["id"] = id
+        container["name"] = name
+        container["emoji"] = emoji
+        container["color"] = color
+        container["parent_id"] = parentId
+        container["sort_order"] = sortOrder
+        container["created_at"] = createdAt
+        container["updated_at"] = updatedAt
     }
 }

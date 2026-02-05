@@ -28,90 +28,62 @@ class LocalNoteRepository {
     /// Fetch all notes
     func fetchAll(includeDeleted: Bool = false) throws -> [Note] {
         return try database.read { database in
-            var request = SQLRequest<Note>(
-                sql: """
-                SELECT * FROM notes
-                WHERE is_deleted = 0
-                ORDER BY created_at DESC
-                """
-            )
-
             if includeDeleted {
-                request = SQLRequest<Note>(
-                    sql: "SELECT * FROM notes ORDER BY created_at DESC"
-                )
+                return try Note.fetchAll(database, sql: "SELECT * FROM notes ORDER BY created_at DESC")
+            } else {
+                return try Note.fetchAll(database, sql: """
+                    SELECT * FROM notes
+                    WHERE is_deleted = 0
+                    ORDER BY created_at DESC
+                    """)
             }
-
-            return try Row.fetchAll(database, request)
-                .compactMap { try? Note.decodeRow($0) }
         }
     }
 
     /// Fetch notes by folder ID
     func fetchByFolder(folderId: String) throws -> [Note] {
         return try database.read { database in
-            let request = SQLRequest<Note>(
-                sql: """
+            return try Note.fetchAll(database, sql: """
                 SELECT * FROM notes
                 WHERE folder_id = ?
                 AND is_deleted = 0
                 ORDER BY created_at DESC
-                """,
-                arguments: [folderId]
-            )
-
-            return try Row.fetchAll(database, request)
-                .compactMap { try? Note.decodeRow($0) }
+                """, arguments: [folderId])
         }
     }
 
     /// Fetch notes pending sync
     func fetchPendingSync() throws -> [Note] {
         return try database.read { database in
-            let request = SQLRequest<Note>(
-                sql: """
+            return try Note.fetchAll(database, sql: """
                 SELECT * FROM notes
                 WHERE sync_status != 'synced'
                 ORDER BY created_at DESC
-                """
-            )
-
-            return try Row.fetchAll(database, request)
-                .compactMap { try? Note.decodeRow($0) }
+                """)
         }
     }
 
     /// Fetch pinned notes
     func fetchPinned() throws -> [Note] {
         return try database.read { database in
-            let request = SQLRequest<Note>(
-                sql: """
+            return try Note.fetchAll(database, sql: """
                 SELECT * FROM notes
                 WHERE is_pinned = 1
                 AND is_deleted = 0
                 ORDER BY updated_at DESC
-                """
-            )
-
-            return try Row.fetchAll(database, request)
-                .compactMap { try? Note.decodeRow($0) }
+                """)
         }
     }
 
     /// Fetch archived notes
     func fetchArchived() throws -> [Note] {
         return try database.read { database in
-            let request = SQLRequest<Note>(
-                sql: """
+            return try Note.fetchAll(database, sql: """
                 SELECT * FROM notes
                 WHERE is_archived = 1
                 AND is_deleted = 0
                 ORDER BY updated_at DESC
-                """
-            )
-
-            return try Row.fetchAll(database, request)
-                .compactMap { try? Note.decodeRow($0) }
+                """)
         }
     }
 
@@ -119,41 +91,26 @@ class LocalNoteRepository {
     func search(query: String) throws -> [Note] {
         return try database.read { database in
             let searchPattern = "%\(query)%"
-            let request = SQLRequest<Note>(
-                sql: """
+            return try Note.fetchAll(database, sql: """
                 SELECT * FROM notes
                 WHERE (title LIKE ? OR content LIKE ?)
                 AND is_deleted = 0
                 ORDER BY created_at DESC
-                """,
-                arguments: [searchPattern, searchPattern]
-            )
-
-            return try Row.fetchAll(database, request)
-                .compactMap { try? Note.decodeRow($0) }
+                """, arguments: [searchPattern, searchPattern])
         }
     }
 
     /// Fetch note by ID
     func fetchById(id: String) throws -> Note? {
         return try database.read { database in
-            let request = SQLRequest<Note>(
-                sql: "SELECT * FROM notes WHERE id = ?",
-                arguments: [id]
-            )
-
-            guard let row = try Row.fetchOne(database, request) else {
-                return nil
-            }
-
-            return try Note.decodeRow(row)
+            return try Note.fetchOne(database, sql: "SELECT * FROM notes WHERE id = ?", arguments: [id])
         }
     }
 
     /// Insert a new note
     func insert(_ note: Note) throws {
         try database.write { database in
-            try note.encodeRow(database)
+            try note.insert(database)
         }
         logger.debug("Note inserted: \(note.id)")
     }
@@ -161,7 +118,7 @@ class LocalNoteRepository {
     /// Update an existing note
     func update(_ note: Note) throws {
         try database.write { database in
-            try note.encodeRow(database)
+            try note.update(database)
         }
         logger.debug("Note updated: \(note.id)")
     }
@@ -217,11 +174,11 @@ class LocalNoteRepository {
 extension Note: FetchableRecord, PersistableRecord {
 
     /// Decode Note from database row
-    static func decodeRow(_ row: Row) throws -> Note {
+    init(row: Row) throws {
         let tagsJSON: String = row["tags"]
         let tags = try JSONDecoder().decode([String].self, from: tagsJSON.data(using: .utf8) ?? Data())
 
-        return Note(
+        self.init(
             id: row["id"],
             title: row["title"],
             content: row["content"],
@@ -236,33 +193,21 @@ extension Note: FetchableRecord, PersistableRecord {
         )
     }
 
-    /// Encode Note to database
-    func encodeRow(_ database: Database) throws {
+    /// Encode Note to database (EncodableRecord conformance)
+    func encode(to container: inout PersistenceContainer) throws {
         let tagsData = try JSONEncoder().encode(tags)
         let tagsJSON = String(data: tagsData, encoding: .utf8) ?? "[]"
 
-        // Use upsert to handle both insert and update
-        try database.execute(
-            sql: """
-            INSERT INTO notes (
-                id, title, content, folder_id, tags, is_pinned, is_archived, is_deleted,
-                created_at, updated_at, synced_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET
-                title = excluded.title,
-                content = excluded.content,
-                folder_id = excluded.folder_id,
-                tags = excluded.tags,
-                is_pinned = excluded.is_pinned,
-                is_archived = excluded.is_archived,
-                is_deleted = excluded.is_deleted,
-                updated_at = excluded.updated_at,
-                synced_at = excluded.synced_at
-            """,
-            arguments: [
-                id, title, content, folderId, tagsJSON, isPinned, isArchived, isDeleted,
-                createdAt, updatedAt, syncedAt
-            ]
-        )
+        container["id"] = id
+        container["title"] = title
+        container["content"] = content
+        container["folder_id"] = folderId
+        container["tags"] = tagsJSON
+        container["is_pinned"] = isPinned
+        container["is_archived"] = isArchived
+        container["is_deleted"] = isDeleted
+        container["created_at"] = createdAt
+        container["updated_at"] = updatedAt
+        container["synced_at"] = syncedAt
     }
 }

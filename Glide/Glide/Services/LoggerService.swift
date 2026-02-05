@@ -32,11 +32,49 @@ import os.log
 /// - ❌ "Auth token: abc123xyz..."
 ///
 protocol LoggerServiceProtocol {
-    func verbose(_ message: String, file: String, function: String, line: Int)
-    func debug(_ message: String, file: String, function: String, line: Int)
-    func info(_ message: String, file: String, function: String, line: Int)
-    func warning(_ message: String, file: String, function: String, line: Int)
-    func error(_ message: String, file: String, function: String, line: Int)
+    func log(verbose message: String, file: String, function: String, line: Int)
+    func log(debug message: String, file: String, function: String, line: Int)
+    func log(info message: String, file: String, function: String, line: Int)
+    func log(warning message: String, file: String, function: String, line: Int)
+    func log(error message: String, file: String, function: String, line: Int)
+}
+
+// MARK: - Convenience Extensions
+
+extension LoggerServiceProtocol {
+    func verbose(_ message: String, file: String = #fileID, function: String = #function, line: Int = #line) {
+        log(verbose: message, file: file, function: function, line: line)
+    }
+    
+    func debug(_ message: String, file: String = #fileID, function: String = #function, line: Int = #line) {
+        log(debug: message, file: file, function: function, line: line)
+    }
+    
+    func info(_ message: String, file: String = #fileID, function: String = #function, line: Int = #line) {
+        log(info: message, file: file, function: function, line: line)
+    }
+    
+    func warning(_ message: String, file: String = #fileID, function: String = #function, line: Int = #line) {
+        log(warning: message, file: file, function: function, line: line)
+    }
+    
+    func error(_ message: String, file: String = #fileID, function: String = #function, line: Int = #line) {
+        log(error: message, file: file, function: function, line: line)
+    }
+}
+
+/// Logger Service - Provides access to the application's logger
+class LoggerService {
+    /// Shared logger instance
+    static let shared: LoggerServiceProtocol = {
+        #if DEBUG
+        return ConsoleLogger()
+        #else
+        return ProductionLogger()
+        #endif
+    }()
+    
+    private init() {}
 }
 
 /// Console Logger for development
@@ -51,23 +89,23 @@ class ConsoleLogger: LoggerServiceProtocol {
         self.osLog = OSLog(subsystem: subsystem, category: category)
     }
 
-    func verbose(_ message: String, file: String, function: String, line: Int) {
+    func log(verbose message: String, file: String, function: String, line: Int) {
         log(message, level: .verbose, file: file, function: function, line: line)
     }
 
-    func debug(_ message: String, file: String, function: String, line: Int) {
+    func log(debug message: String, file: String, function: String, line: Int) {
         log(message, level: .debug, file: file, function: function, line: line)
     }
 
-    func info(_ message: String, file: String, function: String, line: Int) {
+    func log(info message: String, file: String, function: String, line: Int) {
         log(message, level: .info, file: file, function: function, line: line)
     }
 
-    func warning(_ message: String, file: String, function: String, line: Int) {
+    func log(warning message: String, file: String, function: String, line: Int) {
         log(message, level: .warning, file: file, function: function, line: line)
     }
 
-    func error(_ message: String, file: String, function: String, line: Int) {
+    func log(error message: String, file: String, function: String, line: Int) {
         log(message, level: .error, file: file, function: function, line: line)
     }
 
@@ -100,23 +138,23 @@ class ConsoleLogger: LoggerServiceProtocol {
 /// Production Logger that only logs errors
 class ProductionLogger: LoggerServiceProtocol {
 
-    func verbose(_ message: String, file: String, function: String, line: Int) {
+    func log(verbose message: String, file: String, function: String, line: Int) {
         // No verbose logging in production
     }
 
-    func debug(_ message: String, file: String, function: String, line: Int) {
+    func log(debug message: String, file: String, function: String, line: Int) {
         // No debug logging in production
     }
 
-    func info(_ message: String, file: String, function: String, line: Int) {
+    func log(info message: String, file: String, function: String, line: Int) {
         // No info logging in production
     }
 
-    func warning(_ message: String, file: String, function: String, line: Int) {
+    func log(warning message: String, file: String, function: String, line: Int) {
         // No warning logging in production
     }
 
-    func error(_ message: String, file: String, function: String, line: Int) {
+    func log(error message: String, file: String, function: String, line: Int) {
         // Only log errors in production
         let filename = (file as NSString).lastPathComponent
         let timestamp = ISO8601DateFormatter().string(from: Date())
@@ -126,3 +164,4 @@ class ProductionLogger: LoggerServiceProtocol {
         os_log("%{public}@", log: OSLog.default, type: .error, logMessage)
     }
 }
+

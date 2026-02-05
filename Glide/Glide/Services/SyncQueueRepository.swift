@@ -71,66 +71,43 @@ class SyncQueueRepository {
     /// Fetch all pending sync entries
     func fetchAll() throws -> [SyncQueueEntry] {
         return try database.read { database in
-            let request = SQLRequest<SyncQueueEntry>(
-                sql: """
+            return try SyncQueueEntry.fetchAll(database, sql: """
                 SELECT * FROM sync_queue
                 ORDER BY created_at ASC
-                """
-            )
-
-            return try Row.fetchAll(database, request)
-                .compactMap { try? SyncQueueEntry.decodeRow($0) }
+                """)
         }
     }
 
     /// Fetch pending entries by entity type
     func fetchByEntityType(entityType: SyncEntityType) throws -> [SyncQueueEntry] {
         return try database.read { database in
-            let request = SQLRequest<SyncQueueEntry>(
-                sql: """
+            return try SyncQueueEntry.fetchAll(database, sql: """
                 SELECT * FROM sync_queue
                 WHERE entity_type = ?
                 ORDER BY created_at ASC
-                """,
-                arguments: [entityType.rawValue]
-            )
-
-            return try Row.fetchAll(database, request)
-                .compactMap { try? SyncQueueEntry.decodeRow($0) }
+                """, arguments: [entityType.rawValue])
         }
     }
 
     /// Fetch pending entries for a specific entity
     func fetchByEntity(entityType: SyncEntityType, entityId: String) throws -> [SyncQueueEntry] {
         return try database.read { database in
-            let request = SQLRequest<SyncQueueEntry>(
-                sql: """
+            return try SyncQueueEntry.fetchAll(database, sql: """
                 SELECT * FROM sync_queue
                 WHERE entity_type = ? AND entity_id = ?
                 ORDER BY created_at ASC
-                """,
-                arguments: [entityType.rawValue, entityId]
-            )
-
-            return try Row.fetchAll(database, request)
-                .compactMap { try? SyncQueueEntry.decodeRow($0) }
+                """, arguments: [entityType.rawValue, entityId])
         }
     }
 
     /// Fetch entries with low attempt count (to retry failed syncs)
     func fetchRetryable(maxAttempts: Int = 3) throws -> [SyncQueueEntry] {
         return try database.read { database in
-            let request = SQLRequest<SyncQueueEntry>(
-                sql: """
+            return try SyncQueueEntry.fetchAll(database, sql: """
                 SELECT * FROM sync_queue
                 WHERE attempts < ?
                 ORDER BY created_at ASC
-                """,
-                arguments: [maxAttempts]
-            )
-
-            return try Row.fetchAll(database, request)
-                .compactMap { try? SyncQueueEntry.decodeRow($0) }
+                """, arguments: [maxAttempts])
         }
     }
 
@@ -225,8 +202,8 @@ class SyncQueueRepository {
 extension SyncQueueEntry: FetchableRecord {
 
     /// Decode SyncQueueEntry from database row
-    static func decodeRow(_ row: Row) throws -> SyncQueueEntry {
-        return SyncQueueEntry(
+    init(row: Row) throws {
+        self.init(
             id: row["id"],
             operation: SyncOperation(rawValue: row["operation"]) ?? .create,
             entityType: SyncEntityType(rawValue: row["entity_type"]) ?? .note,

@@ -139,6 +139,11 @@ class DependencyContainer {
         )
     }
 
+    /// Get the auth service instance
+    func makeAuthService() -> AuthServiceProtocol {
+        return authService
+    }
+
     func makeNotesListViewModel() -> NotesListViewModel {
         return NotesListViewModel(
             notesRepository: notesRepository,
@@ -264,19 +269,12 @@ protocol UserDefaultsServiceProtocol {
     func remove(_ key: String)
 }
 
-/// Logger Service Protocol
-protocol LoggerServiceProtocol {
-    func verbose(_ message: String, file: String, function: String, line: Int)
-    func debug(_ message: String, file: String, function: String, line: Int)
-    func info(_ message: String, file: String, function: String, line: Int)
-    func warning(_ message: String, file: String, function: String, line: Int)
-    func error(_ message: String, file: String, function: String, line: Int)
-}
+
 
 /// User Repository Protocol
 protocol UserRepositoryProtocol {
     func getCurrentUser() async throws -> User
-    func updateProfile(_ user: User) async throws
+    func updateProfile(_ user: User) async throws -> User
 }
 
 /// Notes Repository Protocol
@@ -296,70 +294,6 @@ protocol FoldersRepositoryProtocol {
     func deleteFolder(id: String) async throws
     func reorderFolders(_ folders: [FolderReorderItem]) async throws
 }
-
-/// Voice Service Protocol
-protocol VoiceServiceProtocol {
-    func transcribe(audioData: Data, filename: String) async throws -> TranscriptionResponse
-    func extractActions(transcript: String) async throws -> ActionsExtraction
-    func processVoiceMemo(audioData: Data, filename: String, folderId: String?) async throws -> VoiceProcessResponse
-    func getUploadURL(filename: String, contentType: String?) async throws -> UploadURLResponse
-    func synthesize(text: String?, audioData: Data?, filename: String?, folderId: String?) async throws -> VoiceSynthesisResponse
-}
-
-// MARK: - Local Repository Protocols (Database)
-
-/// Local Note Repository Protocol
-protocol LocalNoteRepositoryProtocol {
-    func getAll() throws -> [LocalNote]
-    func get(_ id: UUID) throws -> LocalNote?
-    func insert(_ note: LocalNote) throws
-    func update(_ note: LocalNote) throws
-    func delete(_ id: UUID) throws
-}
-
-/// Local Folder Repository Protocol
-protocol LocalFolderRepositoryProtocol {
-    func getAll() throws -> [LocalFolder]
-    func get(_ id: UUID) throws -> LocalFolder?
-    func insert(_ folder: LocalFolder) throws
-    func update(_ folder: LocalFolder) throws
-    func delete(_ id: UUID) throws
-}
-
-/// Local Action Repository Protocol
-protocol LocalActionRepositoryProtocol {
-    func getAll() throws -> [ActionResponse]
-    func get(_ id: UUID) throws -> ActionResponse?
-    func insert(_ action: ActionResponse) throws
-    func update(_ action: ActionResponse) throws
-    func delete(_ id: UUID) throws
-}
-
-/// Sync Queue Repository Protocol
-protocol SyncQueueRepositoryProtocol {
-    func getAllPending() throws -> [SyncQueueItem]
-    func enqueue(_ item: SyncQueueItem) throws
-    func markAsSynced(_ id: UUID) throws
-    func markAsFailed(_ id: UUID, error: String) throws
-}
-
-// MARK: - Sync Queue Model
-
-struct SyncQueueItem: Codable {
-    let id: UUID
-    let entityType: String
-    let entityId: UUID
-    let operation: String
-    let data: Data
-    let createdAt: Date
-    let retryCount: Int
-}
-
-// Type aliases for database repositories (to be implemented)
-typealias LocalNoteRepository = LocalNoteRepositoryProtocol
-typealias LocalFolderRepository = LocalFolderRepositoryProtocol
-typealias LocalActionRepository = LocalActionRepositoryProtocol
-typealias SyncQueueRepository = SyncQueueRepositoryProtocol
 
 // MARK: - Database Repository Protocols
 
