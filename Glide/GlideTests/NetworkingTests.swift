@@ -200,6 +200,99 @@ class AuthServiceTests: XCTestCase {
 
         XCTAssertNil(mockKeychainService.storedValues["auth_token"])
     }
+
+    func testLogoutWithPartialKeychainFailure() async throws {
+        // Setup: Store tokens in keychain
+        mockKeychainService.storedValues["auth_token"] = "test_token"
+        mockKeychainService.storedValues["refresh_token"] = "test_refresh"
+        mockKeychainService.storedValues["user_id"] = "test_user"
+        mockAPIService.mockResponse = AuthService.EmptyResponse()
+
+        // Simulate failure on refresh_token deletion only
+        mockKeychainService.keysToDeleteFail = ["refresh_token"]
+
+        // Attempt logout - should throw partial logout error
+        var caughtError: AuthError?
+        do {
+            try await authService.logout()
+        } catch let error as AuthError {
+            caughtError = error
+        }
+
+        // Verify partial logout error was thrown
+        XCTAssertNotNil(caughtError)
+        if case .partialLogout(let failedItems) = caughtError {
+            XCTAssertTrue(failedItems.contains { $0.contains("refresh_token") })
+            XCTAssertEqual(failedItems.count, 1)
+        } else {
+            XCTFail("Expected .partialLogout error")
+        }
+
+        // Verify auth_token and user_id were still deleted
+        XCTAssertNil(mockKeychainService.storedValues["auth_token"], "auth_token should be deleted")
+        XCTAssertNil(mockKeychainService.storedValues["user_id"], "user_id should be deleted")
+        XCTAssertNotNil(mockKeychainService.storedValues["refresh_token"], "refresh_token should remain due to deletion failure")
+
+        // Verify local state was cleared
+        XCTAssertNil(authService.currentUserId, "currentUserId should be nil")
+    }
+
+    func testLogoutWithCompleteKeychainFailure() async throws {
+        // Setup: Store tokens in keychain
+        mockKeychainService.storedValues["auth_token"] = "test_token"
+        mockKeychainService.storedValues["refresh_token"] = "test_refresh"
+        mockKeychainService.storedValues["user_id"] = "test_user"
+        mockAPIService.mockResponse = AuthService.EmptyResponse()
+
+        // Simulate failure on ALL deletions
+        mockKeychainService.keysToDeleteFail = ["auth_token", "refresh_token", "user_id"]
+
+        // Attempt logout - should throw logoutFailed error
+        var caughtError: AuthError?
+        do {
+            try await authService.logout()
+        } catch let error as AuthError {
+            caughtError = error
+        }
+
+        // Verify complete failure error was thrown
+        XCTAssertNotNil(caughtError)
+        if case .logoutFailed = caughtError {
+            // Expected
+        } else {
+            XCTFail("Expected .logoutFailed error")
+        }
+
+        // Verify all tokens remain in keychain
+        XCTAssertNotNil(mockKeychainService.storedValues["auth_token"], "auth_token should remain")
+        XCTAssertNotNil(mockKeychainService.storedValues["refresh_token"], "refresh_token should remain")
+        XCTAssertNotNil(mockKeychainService.storedValues["user_id"], "user_id should remain")
+
+        // Verify local state was still cleared (important for security)
+        XCTAssertNil(authService.currentUserId, "currentUserId should be nil even on complete failure")
+    }
+
+    func testLogoutLogsWarningsForFailures() async throws {
+        // Setup
+        mockKeychainService.storedValues["auth_token"] = "test_token"
+        mockAPIService.mockResponse = AuthService.EmptyResponse()
+
+        // Simulate one deletion failure
+        mockKeychainService.keysToDeleteFail = ["auth_token"]
+
+        // Attempt logout
+        do {
+            try await authService.logout()
+        } catch {
+            // Error is expected
+        }
+
+        // Verify warnings were logged
+        XCTAssertTrue(mockLogger.warningMessages.contains { $0.contains("Failed to delete auth_token") },
+                     "Expected warning message for auth_token deletion failure")
+        XCTAssertTrue(mockLogger.warningMessages.contains { $0.contains("Failed to clear some credentials during logout") },
+                     "Expected warning message summarizing logout failures")
+    }
 }
 
 // MARK: - Mock API Service
@@ -223,6 +316,7 @@ class MockAPIService: APIServiceProtocol {
 
 class MockKeychainService: KeychainServiceProtocol {
     var storedValues: [String: String] = [:]
+    var keysToDeleteFail: [String] = []  // Keys that should fail deletion
 
     func get(key: String) -> String? {
         return storedValues[key]
@@ -233,6 +327,12 @@ class MockKeychainService: KeychainServiceProtocol {
     }
 
     func delete(key: String) throws {
+        // Check if this key should fail deletion
+        if keysToDeleteFail.contains(key) {
+            throw NSError(domain: "MockKeychainError", code: -1, userInfo: [
+                NSLocalizedDescriptionKey: "Simulated keychain deletion failure for \(key)"
+            ])
+        }
         storedValues.removeValue(forKey: key)
     }
 }

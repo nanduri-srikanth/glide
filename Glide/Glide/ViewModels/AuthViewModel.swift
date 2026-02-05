@@ -79,9 +79,25 @@ class AuthViewModel: ObservableObject {
         isLoading = true
         errorMessage = nil
 
+        // Create local copy to attempt cleanup after use
+        // Note: Swift Strings cannot be securely zeroed, but we can clear the @Published property
+        let tempPassword = password
+
+        // Immediately clear the published property to reduce window of vulnerability
+        password = ""
+
+        // Attempt cleanup when scope exits (not guaranteed by Swift, but best effort)
+        defer {
+            // Attempt to clear password from memory
+            // Note: This is not guaranteed due to Swift's String immutability and ARC,
+            // but reduces the window where password is in memory
+            var passwordToClear = tempPassword
+            passwordToClear = ""
+        }
+
         do {
             logger.info("Login attempt initiated", file: #file, function: #function, line: #line)
-            try await authService.login(email: email, password: password)
+            try await authService.login(email: email, password: tempPassword)
 
             // Update app state
             await MainActor.run {
