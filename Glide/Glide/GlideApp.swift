@@ -191,8 +191,8 @@ struct RootView: View {
     var body: some View {
         Group {
             if appState.isAuthenticated {
-                // Authenticated flow
-                NotesListView()
+                // Authenticated flow - Main Tab View
+                MainTabView()
             } else {
                 // Authentication flow - Login View
                 LoginView(viewModel: DependencyContainer.shared.makeAuthViewModel())
