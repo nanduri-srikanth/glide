@@ -20,6 +20,7 @@ class NotesListViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var searchText: String = ""
     @Published var selectedFolder: Folder?
+    @Published var selectedFolderId: String? = nil // For FolderResponse (UUID as String)
     @Published var sortOption: SortOption = .updatedAt
 
     // MARK: - Types
@@ -148,13 +149,25 @@ class NotesListViewModel: ObservableObject {
             }
         }
 
-        // Apply folder filter
-        if let folder = selectedFolder {
+        // Apply folder filter (support both Folder and FolderResponse)
+        if let folderId = selectedFolderId {
+            // Filter by folder ID (from FolderResponse which uses UUID)
+            filteredNotes = filteredNotes.filter { $0.folderId == folderId }
+        } else if let folder = selectedFolder {
+            // Filter by Folder object (legacy support)
             filteredNotes = filteredNotes.filter { $0.folderId == folder.id }
         }
 
         // Apply sorting
         sortNotes()
+    }
+
+    // MARK: - Folder Selection
+
+    func setSelectedFolderId(_ folderId: String?) {
+        selectedFolderId = folderId
+        selectedFolder = nil // Clear the Folder object when using ID
+        applyFilters()
     }
 
     private func sortNotes() {

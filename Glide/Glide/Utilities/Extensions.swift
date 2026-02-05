@@ -174,3 +174,12 @@ extension Array {
         return indices.contains(index) ? self[index] : nil
     }
 }
+
+// MARK: - UUID Extensions
+
+extension UUID {
+    /// Returns UUID as String
+    var uuidString: String {
+        self.uuidString
+    }
+}

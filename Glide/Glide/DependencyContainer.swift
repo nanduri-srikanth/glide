@@ -145,6 +145,13 @@ class DependencyContainer {
         )
     }
 
+    func makeFoldersViewModel() -> FoldersViewModel {
+        return FoldersViewModel(
+            foldersRepository: foldersRepository,
+            logger: loggerService
+        )
+    }
+
     func makeNoteDetailViewModel(noteId: String) -> NoteDetailViewModel {
         return NoteDetailViewModel(
             noteId: noteId,
@@ -247,7 +254,7 @@ protocol NotesRepositoryProtocol {
 
 /// Folders Repository Protocol
 protocol FoldersRepositoryProtocol {
-    func fetchFolders() async throws -> [Folder]
+    func fetchFolders() async throws -> [FolderResponse]
     func createFolder(_ folder: Folder) async throws -> Folder
     func updateFolder(_ folder: Folder) async throws -> Folder
     func deleteFolder(id: String) async throws

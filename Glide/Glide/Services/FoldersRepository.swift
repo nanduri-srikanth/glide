@@ -25,9 +25,9 @@ class FoldersRepository: FoldersRepositoryProtocol {
 
     // MARK: - Methods
 
-    func fetchFolders() async throws -> [Folder] {
-        let folders: [Folder] = try await apiService.request(Endpoint.folders.path, method: .get, body: nil)
-        cachedFolders = folders
+    func fetchFolders() async throws -> [FolderResponse] {
+        let folders: [FolderResponse] = try await apiService.request(Endpoint.folders.path, method: .get, body: nil)
+        // Note: We're not caching FolderResponse since we'd need a separate cache
         return folders
     }
 
