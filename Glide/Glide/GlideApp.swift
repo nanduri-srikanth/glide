@@ -142,8 +142,8 @@ struct GlideApp: App {
             try BGTaskScheduler.shared.register(
                 forTaskWithIdentifier: backgroundTaskIdentifier,
                 using: nil
-            ) { [weak self] task in
-                self?.handleBackgroundTokenRefresh(task as! BGAppRefreshTask)
+            ) { task in
+                self.handleBackgroundTokenRefresh(task as! BGAppRefreshTask)
             }
 
             print("✅ Background token refresh task registered")
