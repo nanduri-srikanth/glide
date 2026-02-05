@@ -9,7 +9,6 @@ import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNetwork } from '@/context/NetworkContext';
-import { NotesColors } from '@/constants/theme';
 
 export function OfflineStatusBar() {
   const { isOnline } = useNetwork();
@@ -21,7 +20,7 @@ export function OfflineStatusBar() {
   return (
     <View style={styles.container}>
       <Ionicons name="cloud-offline" size={16} color="#FFF" />
-      <Text style={styles.text}>You're offline • Showing cached data</Text>
+      <Text style={styles.text}>You&apos;re offline • Showing cached data</Text>
     </View>
   );
 }
