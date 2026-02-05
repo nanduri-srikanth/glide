@@ -17,12 +17,19 @@ struct Config {
     static let apiBaseURL: String = {
         // Check for environment variable (for production/override)
         if let customURL = ProcessInfo.processInfo.environment["GLIDE_API_URL"] {
+            // Validate that custom URL uses HTTPS
+            if !customURL.hasPrefix("https://") && !customURL.hasPrefix("http://localhost:") {
+                print("⚠️ WARNING: GLIDE_API_URL should use HTTPS for security. Current: \(customURL)")
+            }
             return customURL
         }
 
         #if DEBUG
-        // Development environment - use localhost
-        return "http://localhost:8000"
+        // Development environment - use HTTPS for localhost
+        // SECURITY: Always use HTTPS, even in development, to protect credentials
+        // from man-in-the-middle attacks on local networks
+        // Note: Backend must support HTTPS with self-signed certificate for local dev
+        return "https://localhost:8000"
         #else
         // Production environment - use production API
         return "https://api.glideapp.com"
@@ -55,6 +62,13 @@ struct Config {
         static let enableBiometricAuth = true
         static let enableCrashReporting = true
         static let enableAnalytics = true
+
+        // Security: Disable jailbreak detection for debugging (DEBUG only)
+        #if DEBUG
+        static let disableJailbreakDetection = false  // Set to true for testing on jailbroken devices
+        #else
+        static let disableJailbreakDetection = false  // Always enforce in production
+        #endif
     }
 
     // MARK: - Timeouts

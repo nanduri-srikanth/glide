@@ -54,16 +54,30 @@ class AuthViewModel: ObservableObject {
 
     // MARK: - Validation
 
+    /// Validates email format using regex
+    /// - Parameter email: Email string to validate
+    /// - Returns: True if email format is valid
+    private func isValidEmail(_ email: String) -> Bool {
+        let emailRegex = "[A-Z0-9a-z._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,64}"
+        let predicate = NSPredicate(format: "SELF MATCHES %@", emailRegex)
+        return predicate.evaluate(with: email)
+    }
+
+    /// Published property to track email validation state for UI feedback
+    @Published var isEmailValid: Bool = false
+
+    /// Published property for email-specific error message
+    @Published var emailErrorMessage: String? = nil
+
     var isValidLoginForm: Bool {
-        !email.isEmpty && !password.isEmpty && email.contains("@")
+        isEmailValid && !password.isEmpty
     }
 
     var isValidRegistrationForm: Bool {
-        !email.isEmpty &&
+        isEmailValid &&
         !password.isEmpty &&
         !name.isEmpty &&
         !confirmPassword.isEmpty &&
-        email.contains("@") &&
         password == confirmPassword &&
         password.count >= 8
     }
@@ -220,4 +234,20 @@ class AuthViewModel: ObservableObject {
     func clearError() {
         errorMessage = nil
     }
+
+    /// Validates email and updates validation state
+    /// Called from UI when email changes to provide real-time feedback
+    func validateEmail() {
+        if email.isEmpty {
+            isEmailValid = false
+            emailErrorMessage = nil
+        } else if isValidEmail(email) {
+            isEmailValid = true
+            emailErrorMessage = nil
+        } else {
+            isEmailValid = false
+            emailErrorMessage = "Please enter a valid email address (e.g., user@example.com)"
+        }
+    }
 }
+
