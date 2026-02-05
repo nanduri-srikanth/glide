@@ -1,0 +1,49 @@
+appId: com.glideapp
+---
+# Simple Rate Limit Verification Test
+# This test verifies the rate limiting UI and behavior
+
+- launchApp
+
+# Wait for auth screen
+- assertVisible: "Glide"
+- assertVisible: "Sign In"
+
+# Enter email
+- tapOn: "Email"
+- inputText: "ratelimit2@test.com"
+
+# Enter wrong password 3 times to see attempts warning
+- repeat:
+    times: 3
+    commands:
+      - tapOn: "Password"
+      - inputText: "wrongpass123"
+      - tapOn: "Sign In"
+      - waitForAnimationToEnd:
+          timeout: 2000
+
+# Verify attempts remaining warning appears
+- assertVisible: "2 attempts remaining"
+
+# Take screenshot
+- takeScreenshot: "rate-limit-attempts-warning"
+
+# Attempt 2 more logins (total 5)
+- repeat:
+    times: 2
+    commands:
+      - tapOn: "Password"
+      - inputText: "wrongpass123"
+      - tapOn: "Sign In"
+      - waitForAnimationToEnd:
+          timeout: 2000
+
+# Verify lockout message appears
+- assertVisible: "Account Temporarily Locked"
+- assertVisible: "Time remaining:"
+
+# Take screenshot of lockout
+- takeScreenshot: "rate-limit-locked-out"
+
+- stopApp

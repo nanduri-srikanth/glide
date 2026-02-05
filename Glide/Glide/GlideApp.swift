@@ -69,6 +69,9 @@ struct GlideApp: App {
             // Initialize dependency container
             _ = DependencyContainer.shared
 
+            // Check for existing authentication state in Keychain
+            checkExistingAuthState()
+
             // Register background task for token refresh
             registerBackgroundTasks()
 
@@ -80,6 +83,23 @@ struct GlideApp: App {
         } catch {
             print("❌ Failed to initialize database: \(error.localizedDescription)")
             // In production, you might want to show an error to the user
+        }
+    }
+
+    // MARK: - Authentication State
+
+    /// Check for existing authentication state in Keychain on app launch
+    /// This enables auto-login if valid tokens exist
+    private func checkExistingAuthState() {
+        let authService = DependencyContainer.shared.makeAuthService()
+
+        if authService.isAuthenticated {
+            // User has valid tokens in Keychain, restore authentication state
+            AppState.shared.setAuthenticated(true, userId: authService.currentUserId)
+            print("✅ Auto-login: Restored authentication state from Keychain")
+        } else {
+            // No valid tokens found, user needs to login
+            print("ℹ️ No valid authentication tokens found in Keychain")
         }
     }
 

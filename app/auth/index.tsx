@@ -316,9 +316,12 @@ export default function AuthScreen() {
           )}
 
           <TouchableOpacity
-            style={[styles.submitButton, isLoading && styles.submitButtonDisabled]}
+            style={[
+              styles.submitButton,
+              (isLoading || (mode === 'login' && rateLimitStatus?.isLockedOut)) && styles.submitButtonDisabled
+            ]}
             onPress={handleSubmit}
-            disabled={isLoading}
+            disabled={isLoading || (mode === 'login' && rateLimitStatus?.isLockedOut)}
           >
             {isLoading ? (
               <ActivityIndicator color={NotesColors.textPrimary} />
@@ -520,5 +523,50 @@ const styles = StyleSheet.create({
     marginTop: -8,
     marginBottom: 4,
     marginLeft: 16,
+  },
+  lockoutWarning: {
+    flexDirection: 'row',
+    backgroundColor: '#FEF2F2',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    borderLeftWidth: 4,
+    borderLeftColor: '#EF4444',
+  },
+  lockoutContent: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  lockoutTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#991B1B',
+    marginBottom: 4,
+  },
+  lockoutMessage: {
+    fontSize: 14,
+    color: '#7F1D1D',
+    marginBottom: 8,
+  },
+  lockoutTimer: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#DC2626',
+  },
+  attemptsWarning: {
+    flexDirection: 'row',
+    backgroundColor: '#FFFBEB',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 16,
+    alignItems: 'center',
+    borderLeftWidth: 4,
+    borderLeftColor: '#F59E0B',
+  },
+  attemptsText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#92400E',
+    marginLeft: 8,
   },
 });

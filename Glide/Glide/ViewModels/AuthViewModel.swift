@@ -63,6 +63,35 @@ class AuthViewModel: ObservableObject {
         return predicate.evaluate(with: email)
     }
 
+    /// Validates password strength
+    /// Requirements:
+    /// - At least 8 characters
+    /// - At least one uppercase letter
+    /// - At least one lowercase letter
+    /// - At least one number OR special character
+    /// - Parameter password: Password string to validate
+    /// - Returns: True if password meets all strength requirements
+    private func isStrongPassword(_ password: String) -> Bool {
+        // Check minimum length
+        guard password.count >= 8 else { return false }
+
+        // Check for uppercase letter
+        let hasUppercase = password.rangeOfCharacter(from: .uppercaseLetters) != nil
+
+        // Check for lowercase letter
+        let hasLowercase = password.rangeOfCharacter(from: .lowercaseLetters) != nil
+
+        // Check for number
+        let hasNumber = password.rangeOfCharacter(from: .decimalDigits) != nil
+
+        // Check for special character
+        let specialChars = CharacterSet(charactersIn: "!@#$%^&*()_+-=[]{}|;:,.<>?")
+        let hasSpecial = password.rangeOfCharacter(from: specialChars) != nil
+
+        // All requirements must be met
+        return hasUppercase && hasLowercase && (hasNumber || hasSpecial)
+    }
+
     /// Published property to track email validation state for UI feedback
     @Published var isEmailValid: Bool = false
 
@@ -79,7 +108,7 @@ class AuthViewModel: ObservableObject {
         !name.isEmpty &&
         !confirmPassword.isEmpty &&
         password == confirmPassword &&
-        password.count >= 8
+        isStrongPassword(password)
     }
 
     /// Check if password fields have been cleared from memory
