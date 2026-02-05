@@ -117,12 +117,21 @@ struct RegisterView: View {
                                 .background(Color.white.opacity(0.2))
                                 .cornerRadius(12)
                                 .foregroundStyle(.white)
+                                .onChange(of: viewModel.password) { oldValue, newValue in
+                                    viewModel.validatePassword()
+                                }
 
-                            // Password strength indicator
+                            // Password requirements display
                             if !viewModel.password.isEmpty {
-                                Text(passwordStrengthMessage)
-                                    .font(.caption)
-                                    .foregroundStyle(passwordStrengthColor)
+                                VStack(alignment: .leading, spacing: 4) {
+                                    ForEach(passwordRequirementLines, id: \.self) { line in
+                                        HStack(spacing: 6) {
+                                            Text(line)
+                                                .font(.caption)
+                                                .foregroundStyle(line.hasPrefix("✓") ? .green : .white.opacity(0.8))
+                                        }
+                                    }
+                                }
                             }
                         }
 
@@ -216,28 +225,9 @@ struct RegisterView: View {
 
     // MARK: - Computed Properties
 
-    private var passwordStrengthMessage: String {
-        let count = viewModel.password.count
-        switch count {
-        case 0..<6:
-            return "Too short (min 8 characters)"
-        case 6..<8:
-            return "Almost there (8+ characters required)"
-        default:
-            return "✓ Strong enough"
-        }
-    }
-
-    private var passwordStrengthColor: Color {
-        let count = viewModel.password.count
-        switch count {
-        case 0..<6:
-            return .red
-        case 6..<8:
-            return .orange
-        default:
-            return .green
-        }
+    /// Array of password requirement lines for display
+    private var passwordRequirementLines: [String] {
+        viewModel.passwordRequirementsMessage.components(separatedBy: "\n")
     }
 
     private var passwordMatchMessage: String {

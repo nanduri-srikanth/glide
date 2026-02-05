@@ -98,6 +98,9 @@ class AuthViewModel: ObservableObject {
     /// Published property for email-specific error message
     @Published var emailErrorMessage: String? = nil
 
+    /// Published property to track password validation state for UI feedback
+    @Published var isPasswordValid: Bool = false
+
     var isValidLoginForm: Bool {
         isEmailValid && !password.isEmpty
     }
@@ -277,6 +280,54 @@ class AuthViewModel: ObservableObject {
             isEmailValid = false
             emailErrorMessage = "Please enter a valid email address (e.g., user@example.com)"
         }
+    }
+
+    /// Validates password strength and updates validation state
+    /// Called from UI when password changes to provide real-time feedback
+    func validatePassword() {
+        isPasswordValid = isStrongPassword(password)
+    }
+
+    /// Computed property returning password requirements message
+    /// Shows what requirements are met/not met in real-time
+    var passwordRequirementsMessage: String {
+        var requirements: [String] = []
+
+        // Length requirement
+        if password.count >= 8 {
+            requirements.append("✓ 8+ characters")
+        } else {
+            requirements.append("• 8+ characters")
+        }
+
+        // Uppercase requirement
+        let hasUppercase = password.rangeOfCharacter(from: .uppercaseLetters) != nil
+        if hasUppercase {
+            requirements.append("✓ Uppercase")
+        } else {
+            requirements.append("• Uppercase")
+        }
+
+        // Lowercase requirement
+        let hasLowercase = password.rangeOfCharacter(from: .lowercaseLetters) != nil
+        if hasLowercase {
+            requirements.append("✓ Lowercase")
+        } else {
+            requirements.append("• Lowercase")
+        }
+
+        // Number or special requirement
+        let hasNumber = password.rangeOfCharacter(from: .decimalDigits) != nil
+        let specialChars = CharacterSet(charactersIn: "!@#$%^&*()_+-=[]{}|;:,.<>?")
+        let hasSpecial = password.rangeOfCharacter(from: specialChars) != nil
+
+        if hasNumber || hasSpecial {
+            requirements.append("✓ Number or special (!@#$%)")
+        } else {
+            requirements.append("• Number or special (!@#$%)")
+        }
+
+        return requirements.joined(separator: "\n")
     }
 }
 
