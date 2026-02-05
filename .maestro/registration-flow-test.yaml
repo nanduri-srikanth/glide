@@ -44,6 +44,9 @@ appId: com.snandur2.glide
 - assertVisible:
     text: ".*[Pp]assword.*"
 
+- assertVisible:
+    text: ".*[Cc]onfirm.*[Pp]assword.*"
+
 # Enter unique test user data (using timestamp to avoid conflicts)
 - tapOn:
     id: ".*name.*|.*[Nn]ame.*"
@@ -55,6 +58,30 @@ appId: com.snandur2.glide
 
 - tapOn:
     id: ".*password.*|.*[Pp]assword.*"
+- inputText: "testpassword123"
+
+# Test password mismatch validation
+- tapOn:
+    id: ".*confirm.*password.*"
+- inputText: "differentpassword"
+
+# Try to submit - should show validation error
+- tapOn:
+    text: ".*[Cc]reate.*[Aa]ccount.*|.*[Rr]egiste.*|.*[Ss]ign.*[Uu].*"
+
+# Wait for validation error
+- waitForAnimationToEnd
+
+# Verify error message is shown
+- assertVisible:
+    text: ".*[Pp]asswords.*do.*not.*match.*|.*match.*"
+
+# Take screenshot of validation error
+- takeScreenshot: "register-4a-password-mismatch-error"
+
+# Fix password mismatch
+- tapOn:
+    id: ".*confirm.*password.*"
 - inputText: "testpassword123"
 
 # Take screenshot before submitting
