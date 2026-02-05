@@ -1,8 +1,16 @@
-# Welcome to your Expo app 👋
+# Glide - React Native Mobile App
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+A React Native mobile application built with Expo.
 
-## Get started
+## Development Setup
+
+### Prerequisites
+
+- Node.js 18+ installed
+- iOS Simulator (Mac) or Android Emulator
+- Backend API server running (see `../glide-backend/README.md`)
+
+### Installation
 
 1. Install dependencies
 
@@ -10,20 +18,71 @@ This is an [Expo](https://expo.dev) project created with [`create-expo-app`](htt
    npm install
    ```
 
-2. Start the app
+2. Configure environment variables
+
+   Copy `.env.example` to `.env.local` and configure:
+
+   ```bash
+   cp .env.example .env.local
+   ```
+
+   Key environment variables:
+   - `EXPO_PUBLIC_API_PORT`: Backend API port (default: 8000)
+   - `EXPO_PUBLIC_DEV_AUTO_LOGIN`: Auto-login with test credentials (true/false)
+   - `EXPO_PUBLIC_DEV_TEST_EMAIL`: Test user email for auto-login
+   - `EXPO_PUBLIC_DEV_TEST_PASSWORD`: Test user password for auto-login
+
+3. Start the backend server
+
+   ```bash
+   cd ../glide-backend
+   source .venv/bin/activate  # or venv/bin/activate
+   uvicorn app.main:app --reload --port 8000
+   ```
+
+4. Start the Expo app
 
    ```bash
    npx expo start
    ```
 
-In the output, you'll find options to open the app in a
+   Press `i` for iOS Simulator or `a` for Android Emulator
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+## Development Mode (Auto-Login)
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+By default, `EXPO_PUBLIC_DEV_AUTO_LOGIN=true` is enabled to skip the login screen during development. The app will automatically log in with the test user credentials.
+
+**To test real authentication**, set in `.env.local`:
+```
+EXPO_PUBLIC_DEV_AUTO_LOGIN=false
+```
+
+Then restart the app. You'll see the login screen and can test:
+- Login with valid/invalid credentials
+- Registration flow
+- Apple Sign-In (on iOS devices)
+
+## Testing
+
+### Backend Test User
+
+Ensure the test user exists in the database:
+- Email: `devtest@glide.app`
+- Password: `test123` (or whatever you set in `EXPO_PUBLIC_DEV_TEST_PASSWORD`)
+
+If the user doesn't exist, register through the app or create via API:
+```bash
+curl -X POST http://localhost:8000/api/v1/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"devtest@glide.app","password":"test123","full_name":"Dev Test"}'
+```
+
+### Error Handling Testing
+
+The app uses a standardized error response format. Test error messages display correctly by:
+1. Disabling auto-login (`EXPO_PUBLIC_DEV_AUTO_LOGIN=false`)
+2. Attempting to login with invalid credentials
+3. Verifying the error message is clear and user-friendly
 
 ## Get a fresh project
 
