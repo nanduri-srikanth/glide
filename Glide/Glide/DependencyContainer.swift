@@ -168,6 +168,14 @@ class DependencyContainer {
         )
     }
 
+    func makeCreateNoteViewModel() -> CreateNoteViewModel {
+        return CreateNoteViewModel(
+            notesRepository: notesRepository,
+            foldersRepository: foldersRepository,
+            logger: loggerService
+        )
+    }
+
     // MARK: - Testing Support
 
     #if DEBUG
