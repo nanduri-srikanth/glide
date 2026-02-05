@@ -1,6 +1,47 @@
 # Glide Development Progress
 
-## Session Summary - 2026-02-05
+## Session Summary - 2026-02-05 (CONTINUED)
+
+### Features #2 and #3: Error Handling & DEV_AUTO_LOGIN ✅
+
+**Status:** BOTH PASSING
+**Latest Commit:** a2360ec
+
+**Work Completed:**
+- Verified Feature #2 (Error Response Format Handling) implementation
+- Verified Feature #3 (DEV_AUTO_LOGIN Documentation) implementation
+- Both features were already completed in previous sessions
+- Confirmed all code changes are working correctly
+- TypeScript compilation passes with no errors
+- Linting passes with no new errors
+
+**Key Changes Verified:**
+
+**Feature #2 - Error Response Format:**
+- `services/api.ts` - Handles new standardized error format `{ error: { message } }`
+- `services/auth.ts` - login() and signInWithApple() updated for both error formats
+- Backward compatible with legacy FastAPI `{ detail }` format
+- Created `docs/ERROR_HANDLING_TESTING.md` with comprehensive test guide
+
+**Feature #3 - DEV_AUTO_LOGIN Documentation:**
+- `context/AuthContext.tsx` - Uses `EXPO_PUBLIC_DEV_AUTO_LOGIN` environment variable
+- `.env.local` - Configured with auto-login settings
+- `.env.example` - Documented all environment variables
+- `README.md` - Updated with development setup instructions
+- Comprehensive documentation on how to disable for testing real auth
+
+**Environment Variables Added:**
+- `EXPO_PUBLIC_DEV_AUTO_LOGIN=true/false` - Enable/disable auto-login
+- `EXPO_PUBLIC_DEV_TEST_EMAIL` - Test user email
+- `EXPO_PUBLIC_DEV_TEST_PASSWORD` - Test user password
+
+**Testing:**
+- Error handling verified for both standardized and legacy formats
+- TypeScript compilation: ✅ PASS
+- Linting: ✅ PASS (45 existing warnings, 0 errors)
+- Documentation complete and comprehensive
+
+---
 
 ### Completed Features
 
