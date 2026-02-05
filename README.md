@@ -1,5 +1,26 @@
 # Glide - React Native Mobile App
 
+## ⚠️ DUAL FRONTEND ARCHITECTURE
+
+This repository contains **TWO separate frontend applications**:
+
+1. **React Native/Expo** (this directory) - Cross-platform mobile app (iOS/Android)
+2. **Native iOS Swift** (`Glide/Glide/`) - Native SwiftUI app (iOS only)
+
+**Both frontends connect to the same backend**: `glide-backend/` (FastAPI Python server)
+
+### Important: Which Frontend to Work On?
+
+- **React Native/Expo features** → Work in the **root directory** (where you are now)
+- **Swift/SwiftUI features** → Work in **`Glide/Glide/`** directory
+- **Backend API** → Work in **`glide-backend/`** directory
+
+See `Glide/Glide/README.md` for the native iOS Swift app documentation.
+
+---
+
+## About This App (React Native/Expo)
+
 A React Native mobile application built with Expo.
 
 ## Development Setup

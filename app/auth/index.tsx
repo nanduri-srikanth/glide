@@ -130,18 +130,28 @@ export default function AuthScreen() {
         {/* Form */}
         <View style={styles.form}>
           {mode === 'register' && (
-            <View style={styles.inputContainer}>
-              <Ionicons name="person-outline" size={20} color={NotesColors.textSecondary} style={styles.inputIcon} />
-              <TextInput
-                style={styles.input}
-                placeholder="Full Name"
-                placeholderTextColor={NotesColors.textSecondary}
-                value={name}
-                onChangeText={setName}
-                autoCapitalize="words"
-                autoCorrect={false}
-              />
-            </View>
+            <>
+              <View style={styles.inputContainer}>
+                <Ionicons name="person-outline" size={20} color={NotesColors.textSecondary} style={styles.inputIcon} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Full Name"
+                  placeholderTextColor={NotesColors.textSecondary}
+                  value={name}
+                  onChangeText={(text) => {
+                    setName(text);
+                    if (validationErrors.fullName) {
+                      setValidationErrors({ ...validationErrors, fullName: undefined });
+                    }
+                  }}
+                  autoCapitalize="words"
+                  autoCorrect={false}
+                />
+              </View>
+              {validationErrors.fullName && (
+                <Text style={styles.errorText}>{validationErrors.fullName}</Text>
+              )}
+            </>
           )}
 
           <View style={styles.inputContainer}>
@@ -151,12 +161,20 @@ export default function AuthScreen() {
               placeholder="Email"
               placeholderTextColor={NotesColors.textSecondary}
               value={email}
-              onChangeText={setEmail}
+              onChangeText={(text) => {
+                setEmail(text);
+                if (validationErrors.email) {
+                  setValidationErrors({ ...validationErrors, email: undefined });
+                }
+              }}
               keyboardType="email-address"
               autoCapitalize="none"
               autoCorrect={false}
             />
           </View>
+          {validationErrors.email && (
+            <Text style={styles.errorText}>{validationErrors.email}</Text>
+          )}
 
           <View style={styles.inputContainer}>
             <Ionicons name="lock-closed-outline" size={20} color={NotesColors.textSecondary} style={styles.inputIcon} />
@@ -165,7 +183,13 @@ export default function AuthScreen() {
               placeholder="Password"
               placeholderTextColor={NotesColors.textSecondary}
               value={password}
-              onChangeText={setPassword}
+              onChangeText={(text) => {
+                setPassword(text);
+                // Clear confirm password error if password changes
+                if (validationErrors.confirmPassword) {
+                  setValidationErrors({ ...validationErrors, confirmPassword: undefined });
+                }
+              }}
               secureTextEntry={!showPassword}
               autoCapitalize="none"
               autoCorrect={false}
@@ -181,6 +205,46 @@ export default function AuthScreen() {
               />
             </TouchableOpacity>
           </View>
+          {validationErrors.password && (
+            <Text style={styles.errorText}>{validationErrors.password}</Text>
+          )}
+
+          {mode === 'register' && (
+            <>
+              <View style={styles.inputContainer}>
+                <Ionicons name="lock-closed-outline" size={20} color={NotesColors.textSecondary} style={styles.inputIcon} />
+                <TextInput
+                  style={styles.input}
+                  placeholder="Confirm Password"
+                  placeholderTextColor={NotesColors.textSecondary}
+                  value={confirmPassword}
+                  onChangeText={(text) => {
+                    setConfirmPassword(text);
+                    // Clear error when user starts typing
+                    if (validationErrors.confirmPassword) {
+                      setValidationErrors({ ...validationErrors, confirmPassword: undefined });
+                    }
+                  }}
+                  secureTextEntry={!showConfirmPassword}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                <TouchableOpacity
+                  onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+                  style={styles.eyeButton}
+                >
+                  <Ionicons
+                    name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'}
+                    size={20}
+                    color={NotesColors.textSecondary}
+                  />
+                </TouchableOpacity>
+              </View>
+              {validationErrors.confirmPassword && (
+                <Text style={styles.errorText}>{validationErrors.confirmPassword}</Text>
+              )}
+            </>
+          )}
 
           <TouchableOpacity
             style={[styles.submitButton, isLoading && styles.submitButtonDisabled]}
@@ -380,5 +444,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: NotesColors.primary,
+  },
+  errorText: {
+    fontSize: 12,
+    color: '#EF4444',
+    marginTop: -8,
+    marginBottom: 4,
+    marginLeft: 16,
   },
 });
