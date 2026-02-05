@@ -33,14 +33,27 @@ struct GlideApp: App {
     // MARK: - Setup
 
     private func setupApp() {
-        // Initialize dependency container
-        _ = DependencyContainer.shared
+        do {
+            // Initialize database
+            try DatabaseManager.shared.initialize()
+            print("✅ Database initialized successfully")
 
-        #if DEBUG
-        print("✅ Glide App Started")
-        print("📱 API Endpoint: \(Config.apiEndpoint)")
-        print("🔧 Environment: \(Config.isLoggingEnabled ? "DEBUG" : "RELEASE")")
-        #endif
+            // Initialize dependency container and database repositories
+            try DependencyContainer.shared.initializeDatabaseRepositories()
+            print("✅ Database repositories initialized")
+
+            // Initialize dependency container
+            _ = DependencyContainer.shared
+
+            #if DEBUG
+            print("✅ Glide App Started")
+            print("📱 API Endpoint: \(Config.apiEndpoint)")
+            print("🔧 Environment: \(Config.isLoggingEnabled ? "DEBUG" : "RELEASE")")
+            #endif
+        } catch {
+            print("❌ Failed to initialize database: \(error.localizedDescription)")
+            // In production, you might want to show an error to the user
+        }
     }
 
     // MARK: - Deep Linking

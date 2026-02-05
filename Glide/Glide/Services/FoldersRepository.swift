@@ -60,7 +60,7 @@ class FoldersRepository: FoldersRepositoryProtocol {
     func reorderFolders(_ folders: [FolderReorderItem]) async throws {
         let requestBody = FolderBulkReorder(folders: folders)
         let body = try JSONEncoder().encode(requestBody)
-        _ = try await apiService.request(Endpoint.foldersReorder.path, method: .post, body: nil)
+        _ = try await apiService.request(Endpoint.foldersReorder.path, method: .post, body: body)
 
         // Refresh cache after reorder
         _ = try await fetchFolders()

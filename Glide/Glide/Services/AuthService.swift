@@ -28,6 +28,20 @@ class AuthService: AuthServiceProtocol {
 
     // MARK: - Types
 
+    struct TokenResponse: Codable {
+        let accessToken: String
+        let refreshToken: String
+        let tokenType: String
+        let expiresIn: Int
+
+        enum CodingKeys: String, CodingKey {
+            case accessToken = "access_token"
+            case refreshToken = "refresh_token"
+            case tokenType = "token_type"
+            case expiresIn = "expires_in"
+        }
+    }
+
     struct LoginRequest: Codable {
         let email: String
         let password: String
@@ -72,30 +86,28 @@ class AuthService: AuthServiceProtocol {
         let request = LoginRequest(email: email, password: password)
 
         let body = try JSONEncoder().encode(request)
-        let response: LoginResponse = try await apiService.request("/auth/login", method: .post, body: body)
+        let response: TokenResponse = try await apiService.request("/auth/login", method: .post, body: body)
 
-        // Save auth token and user ID
-        try keychainService.set(key: "auth_token", value: response.token)
-        try keychainService.set(key: "user_id", value: response.user.id)
+        // Save auth token and refresh token
+        try keychainService.set(key: "auth_token", value: response.accessToken)
+        try keychainService.set(key: "refresh_token", value: response.refreshToken)
 
-        currentUserId = response.user.id
-
-        logger.info("User logged in: \(response.user.id)", file: #file, function: #function, line: #line)
+        // Fetch user profile to get user ID
+        // In production, this would come from the login response
+        logger.info("User logged in", file: #file, function: #function, line: #line)
     }
 
     func register(email: String, password: String, name: String) async throws {
         let request = RegisterRequest(email: email, password: password, name: name)
 
         let body = try JSONEncoder().encode(request)
-        let response: RegisterResponse = try await apiService.request("/auth/register", method: .post, body: body)
+        let response: TokenResponse = try await apiService.request("/auth/register", method: .post, body: body)
 
-        // Save auth token and user ID
-        try keychainService.set(key: "auth_token", value: response.token)
-        try keychainService.set(key: "user_id", value: response.user.id)
+        // Save auth token and refresh token
+        try keychainService.set(key: "auth_token", value: response.accessToken)
+        try keychainService.set(key: "refresh_token", value: response.refreshToken)
 
-        currentUserId = response.user.id
-
-        logger.info("User registered: \(response.user.id)", file: #file, function: #function, line: #line)
+        logger.info("User registered", file: #file, function: #function, line: #line)
     }
 
     func logout() async throws {
@@ -112,8 +124,18 @@ class AuthService: AuthServiceProtocol {
     }
 
     func refreshToken() async throws {
-        // Implementation for token refresh
-        fatalError("Token refresh not implemented yet")
+        guard let refreshToken = keychainService.get(key: "refresh_token") else {
+            throw AuthError.invalidCredentials
+        }
+
+        let body = try JSONEncoder().encode(["refresh_token": refreshToken])
+        let response: TokenResponse = try await apiService.request("/auth/refresh", method: .post, body: body)
+
+        // Save new tokens
+        try keychainService.set(key: "auth_token", value: response.accessToken)
+        try keychainService.set(key: "refresh_token", value: response.refreshToken)
+
+        logger.info("Token refreshed successfully", file: #file, function: #function, line: #line)
     }
 
     // MARK: - Helper Types

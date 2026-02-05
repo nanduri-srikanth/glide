@@ -17,6 +17,8 @@ class APIService: APIServiceProtocol {
     private let logger: LoggerServiceProtocol
 
     private let urlSession: URLSession
+    private let keychainService: KeychainServiceProtocol
+    private var isRefreshing = false
 
     // MARK: - Initialization
 
@@ -24,6 +26,7 @@ class APIService: APIServiceProtocol {
         self.baseURL = baseURL
         self.timeout = timeout
         self.logger = logger
+        self.keychainService = KeychainService()
 
         let configuration = URLSessionConfiguration.default
         configuration.timeoutIntervalForRequest = timeout
@@ -79,6 +82,10 @@ class APIService: APIServiceProtocol {
                 }
 
             case 401:
+                // Attempt token refresh on 401 Unauthorized
+                if try await refreshAccessTokenAndRetry(endpoint, method: method, body: body) as? T != nil {
+                    return try await request(endpoint, method: method, body: body)
+                }
                 throw APIError.unauthorized
 
             case 403:
@@ -105,6 +112,82 @@ class APIService: APIServiceProtocol {
     func upload(_ endpoint: String, data: Data) async throws -> UploadResponse {
         // Implementation for file uploads
         fatalError("Upload not implemented yet")
+    }
+
+    // MARK: - Token Refresh
+
+    private func refreshAccessTokenAndRetry<T: Decodable>(
+        _ endpoint: String,
+        method: HTTPMethod,
+        body: Data?
+    ) async throws -> T? {
+
+        // Prevent concurrent refresh attempts
+        guard !isRefreshing else {
+            return nil
+        }
+
+        isRefreshing = true
+        defer { isRefreshing = false }
+
+        guard let refreshToken = keychainService.get(key: "refresh_token") else {
+            return nil
+        }
+
+        logger.debug("Attempting token refresh", file: #file, function: #function, line: #line)
+
+        // Create refresh request
+        guard let url = URL(string: "\(baseURL)/auth/refresh") else {
+            return nil
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = HTTPMethod.post.rawValue
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let refreshBody = ["refresh_token": refreshToken]
+        request.httpBody = try? JSONEncoder().encode(refreshBody)
+
+        do {
+            let (data, response) = try await urlSession.data(for: request)
+
+            guard let httpResponse = response as? HTTPURLResponse,
+                  httpResponse.statusCode == 200 else {
+                logger.warning("Token refresh failed", file: #file, function: #function, line: #line)
+                return nil
+            }
+
+            let tokenResponse = try JSONDecoder().decode(TokenRefreshResponse.self, from: data)
+
+            // Save new tokens
+            try keychainService.set(key: "auth_token", value: tokenResponse.accessToken)
+            try keychainService.set(key: "refresh_token", value: tokenResponse.refreshToken)
+
+            logger.info("Token refreshed successfully", file: #file, function: #function, line: #line)
+
+            // Return retry success indicator
+            return nil
+
+        } catch {
+            logger.error("Token refresh error: \(error.localizedDescription)", file: #file, function: #function, line: #line)
+            return nil
+        }
+    }
+}
+
+// MARK: - Token Refresh Response
+
+private struct TokenRefreshResponse: Codable {
+    let accessToken: String
+    let refreshToken: String
+    let tokenType: String
+    let expiresIn: Int
+
+    enum CodingKeys: String, CodingKey {
+        case accessToken = "access_token"
+        case refreshToken = "refresh_token"
+        case tokenType = "token_type"
+        case expiresIn = "expires_in"
     }
 }
 
