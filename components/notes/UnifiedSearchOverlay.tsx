@@ -38,7 +38,7 @@ export function UnifiedSearchOverlay({
   const [folders, setFolders] = useState<FolderResponse[]>([]);
   const [notes, setNotes] = useState<NoteListItem[]>([]);
   const inputRef = useRef<TextInput>(null);
-  const debounceRef = useRef<NodeJS.Timeout | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Focus input when overlay opens
   useEffect(() => {

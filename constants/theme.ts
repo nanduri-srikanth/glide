@@ -18,6 +18,7 @@ export const NotesColors = {
   card: '#FAFAFF',         // Soft white card backgrounds
   textPrimary: '#2D2A4A',  // Deep purple-navy text
   textSecondary: '#6B6899', // Muted purple-gray text
+  border: '#E5E4EB',       // Light border color
   // Derived colors for AI Summary Panel
   aiPanelBackground: 'rgba(185, 183, 235, 0.15)',
   aiPanelBorder: 'rgba(185, 183, 235, 0.4)',
