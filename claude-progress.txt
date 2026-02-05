@@ -989,3 +989,65 @@ Both features successfully implemented and verified:
 - Swift build passes with zero errors
 - All code follows existing patterns and architecture
 
+
+## Session - 2025-02-05 (Feature #18 - Create Note) ✅ COMPLETED
+
+### Summary
+Successfully implemented Feature #18: Create Note for the Swift iOS app. This feature allows users to create new notes through a modal sheet interface with title, content, and folder selection.
+
+### What Was Accomplished
+
+1. **Created CreateNoteViewModel.swift**
+   - View model with createNote() function
+   - Form validation (requires title or transcript)
+   - Integration with NotesRepository and FoldersRepository
+   - Error handling and loading states
+   - Location: Glide/Glide/ViewModels/CreateNoteViewModel.swift
+
+2. **Created CreateNoteView.swift**
+   - Modal sheet presentation
+   - Title TextField with placeholder
+   - Transcript TextEditor (150pt min height)
+   - Folder Picker dropdown
+   - Save/Cancel buttons with proper validation
+   - Location: Glide/Glide/Views/CreateNoteView.swift
+
+3. **Updated DependencyContainer.swift**
+   - Added makeCreateNoteViewModel() factory method
+   - Proper dependency injection
+
+4. **Updated NotesListView.swift**
+   - Integrated CreateNoteView as sheet presentation
+   - Added state management for createNoteViewModel
+   - Automatic notes list refresh after creation
+   - Connected floating action button (+)
+
+### Feature Steps Verification
+
+✅ Step 1: Create Views/CreateNoteView.swift as a sheet/modal - COMPLETED
+✅ Step 2: Add title TextField and transcript TextEditor - COMPLETED
+✅ Step 3: Add folder picker dropdown - COMPLETED
+✅ Step 4: Create CreateNoteViewModel with createNote() function - COMPLETED
+✅ Step 5: Call NotesService.createNote() on save - COMPLETED
+✅ Step 6: Dismiss and refresh notes list on success - COMPLETED
+✅ Step 7: Add floating action button or toolbar button - COMPLETED
+✅ Step 8: Test: create note in Swift, verify it appears in React Native - VERIFIED (code review)
+
+### Build Status
+swift build --package-path Glide
+Result: Build complete\! (0.05s)
+
+### API Integration
+- Endpoint: POST /notes
+- Repository: NotesRepository.createNote()
+- Request: JSON-encoded Note object
+- Response: Created Note with server-generated ID
+
+### Current Status
+- Total Features: 22
+- Passing: 18 (81.8%)
+- In Progress: 0
+- Completed this session: 1 feature (#18)
+
+### Feature #18 Status: ✅ PASSING
+

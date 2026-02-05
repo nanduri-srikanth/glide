@@ -273,3 +273,182 @@ class LocalModelTests: XCTestCase {
         XCTAssertTrue(SyncStatus.conflict.hasError)
     }
 }
+
+// MARK: - Generic Response Type Tests
+
+class GenericResponseTests: XCTestCase {
+
+    func testAPIResponseDecoding() throws {
+        let json = """
+        {
+            "data": {
+                "id": "550e8400-e29b-41d4-a716-446655440000",
+                "email": "test@example.com",
+                "full_name": "Test User",
+                "is_active": true,
+                "is_verified": true,
+                "timezone": "America/Los_Angeles",
+                "auto_transcribe": true,
+                "auto_create_actions": true,
+                "created_at": "2024-01-15T10:30:00Z",
+                "google_connected": true,
+                "apple_connected": false
+            },
+            "message": "User retrieved successfully",
+            "code": "SUCCESS"
+        }
+        """.data(using: .utf8)!
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+
+        let response = try decoder.decode(APIResponse<UserResponse>.self, from: json)
+
+        XCTAssertEqual(response.data.email, "test@example.com")
+        XCTAssertEqual(response.message, "User retrieved successfully")
+        XCTAssertEqual(response.code, "SUCCESS")
+    }
+
+    func testPaginatedResponseDecoding() throws {
+        let json = """
+        {
+            "items": [
+                {
+                    "id": "550e8400-e29b-41d4-a716-446655440001",
+                    "title": "Meeting Notes",
+                    "preview": "This is the transcript...",
+                    "duration": 180,
+                    "folder_id": null,
+                    "tags": ["meeting"],
+                    "is_pinned": false,
+                    "action_count": 3,
+                    "calendar_count": 1,
+                    "email_count": 1,
+                    "reminder_count": 1,
+                    "created_at": "2024-01-15T10:00:00Z"
+                }
+            ],
+            "total": 25,
+            "page": 1,
+            "per_page": 20,
+            "pages": 2
+        }
+        """.data(using: .utf8)!
+
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+
+        let response = try decoder.decode(PaginatedResponse<NoteListItem>.self, from: json)
+
+        XCTAssertEqual(response.items.count, 1)
+        XCTAssertEqual(response.total, 25)
+        XCTAssertEqual(response.page, 1)
+        XCTAssertEqual(response.perPage, 20)
+        XCTAssertEqual(response.pages, 2)
+        XCTAssertTrue(response.hasMorePages)
+        XCTAssertTrue(response.hasNextPage)
+        XCTAssertFalse(response.hasPreviousPage)
+        XCTAssertFalse(response.isLastPage)
+    }
+
+    func testPaginatedResponseLastPage() throws {
+        let json = """
+        {
+            "items": [],
+            "total": 25,
+            "page": 2,
+            "per_page": 20,
+            "pages": 2
+        }
+        """.data(using: .utf8)!
+
+        let response = try JSONDecoder().decode(PaginatedResponse<NoteListItem>.self, from: json)
+
+        XCTAssertTrue(response.isLastPage)
+        XCTAssertFalse(response.hasMorePages)
+        XCTAssertFalse(response.isFirstPage)
+    }
+
+    func testEmptyResponseDecoding() throws {
+        let json = """
+        {
+            "message": "Resource deleted successfully",
+            "code": "SUCCESS"
+        }
+        """.data(using: .utf8)!
+
+        let response = try JSONDecoder().decode(EmptyResponse.self, from: json)
+
+        XCTAssertEqual(response.message, "Resource deleted successfully")
+        XCTAssertEqual(response.code, "SUCCESS")
+    }
+
+    func testBatchResponseDecoding() throws {
+        let json = """
+        {
+            "succeeded": [
+                {
+                    "id": "550e8400-e29b-41d4-a716-446655440001",
+                    "title": "Note 1"
+                }
+            ],
+            "failed": [
+                {
+                    "id": "550e8400-e29b-41d4-a716-446655440002",
+                    "error": "VALIDATION_ERROR",
+                    "message": "Invalid title"
+                }
+            ],
+            "total": 2,
+            "success_count": 1,
+            "failure_count": 1
+        }
+        """.data(using: .utf8)!
+
+        // For this test, we'll use a simple Codable struct
+        struct SimpleNote: Codable {
+            let id: String
+            let title: String
+        }
+
+        let response = try JSONDecoder().decode(BatchResponse<SimpleNote>.self, from: json)
+
+        XCTAssertEqual(response.succeeded.count, 1)
+        XCTAssertEqual(response.failed.count, 1)
+        XCTAssertEqual(response.total, 2)
+        XCTAssertEqual(response.successCount, 1)
+        XCTAssertEqual(response.failureCount, 1)
+        XCTAssertFalse(response.allSucceeded)
+    }
+
+    func testAPIResponseEncoding() throws {
+        let user = UserResponse(
+            id: UUID(),
+            email: "test@example.com",
+            fullName: "Test User",
+            isActive: true,
+            isVerified: true,
+            timezone: "America/Los_Angeles",
+            autoTranscribe: true,
+            autoCreateActions: true,
+            createdAt: Date(),
+            googleConnected: true,
+            appleConnected: false
+        )
+
+        let apiResponse = APIResponse(data: user, message: "Success", code: "SUCCESS")
+
+        let encoder = JSONEncoder()
+        let data = try encoder.encode(apiResponse)
+
+        XCTAssertFalse(data.isEmpty)
+
+        // Verify it can be round-tripped
+        let decoder = JSONDecoder()
+        let decoded = try decoder.decode(APIResponse<UserResponse>.self, from: data)
+
+        XCTAssertEqual(decoded.data.email, "test@example.com")
+        XCTAssertEqual(decoded.message, "Success")
+        XCTAssertEqual(decoded.code, "SUCCESS")
+    }
+}
