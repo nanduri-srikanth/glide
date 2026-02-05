@@ -32,13 +32,33 @@ class DependencyContainer {
     /// Logger service
     private(set) var loggerService: LoggerServiceProtocol
 
-    // MARK: - Repositories
+    // MARK: - Database Repositories
+
+    /// Local note repository (SQLite)
+    private(set) var localNoteRepository: LocalNoteRepository?
+
+    /// Local folder repository (SQLite)
+    private(set) var localFolderRepository: LocalFolderRepository?
+
+    /// Local action repository (SQLite)
+    private(set) var localActionRepository: LocalActionRepository?
+
+    /// Sync queue repository (SQLite)
+    private(set) var syncQueueRepository: SyncQueueRepository?
+
+    // MARK: - API Repositories
 
     /// User repository
     private(set) var userRepository: UserRepositoryProtocol
 
     /// Notes repository
     private(set) var notesRepository: NotesRepositoryProtocol
+
+    /// Folders repository
+    private(set) var foldersRepository: FoldersRepositoryProtocol
+
+    /// Voice service
+    private(set) var voiceService: VoiceServiceProtocol
 
     // MARK: - Initialization
 
@@ -67,7 +87,13 @@ class DependencyContainer {
             logger: self.loggerService
         )
 
-        // Initialize repositories
+        // Initialize database (will be initialized in app launch)
+        self.localNoteRepository = nil
+        self.localFolderRepository = nil
+        self.localActionRepository = nil
+        self.syncQueueRepository = nil
+
+        // Initialize API repositories
         self.userRepository = UserRepository(
             apiService: self.apiService,
             authService: self.authService
@@ -77,6 +103,28 @@ class DependencyContainer {
             apiService: self.apiService,
             authService: self.authService
         )
+
+        self.foldersRepository = FoldersRepository(
+            apiService: self.apiService,
+            authService: self.authService
+        )
+
+        self.voiceService = VoiceService(
+            apiService: self.apiService,
+            logger: self.loggerService
+        )
+    }
+
+    /// Initialize database repositories (call after DatabaseManager.initialize())
+    func initializeDatabaseRepositories() throws {
+        let database = try DatabaseManager.shared.getDatabase()
+
+        self.localNoteRepository = LocalNoteRepository(database: database)
+        self.localFolderRepository = LocalFolderRepository(database: database)
+        self.localActionRepository = LocalActionRepository(database: database)
+        self.syncQueueRepository = SyncQueueRepository(database: database)
+
+        loggerService.info("Database repositories initialized")
     }
 
     // MARK: - Factory Methods
@@ -195,4 +243,22 @@ protocol NotesRepositoryProtocol {
     func createNote(_ note: Note) async throws -> Note
     func updateNote(_ note: Note) async throws -> Note
     func deleteNote(id: String) async throws
+}
+
+/// Folders Repository Protocol
+protocol FoldersRepositoryProtocol {
+    func fetchFolders() async throws -> [Folder]
+    func createFolder(_ folder: Folder) async throws -> Folder
+    func updateFolder(_ folder: Folder) async throws -> Folder
+    func deleteFolder(id: String) async throws
+    func reorderFolders(_ folders: [FolderReorderItem]) async throws
+}
+
+/// Voice Service Protocol
+protocol VoiceServiceProtocol {
+    func transcribe(audioData: Data, filename: String) async throws -> TranscriptionResponse
+    func extractActions(transcript: String) async throws -> ActionsExtraction
+    func processVoiceMemo(audioData: Data, filename: String, folderId: String?) async throws -> VoiceProcessResponse
+    func getUploadURL(filename: String, contentType: String?) async throws -> UploadURLResponse
+    func synthesize(text: String?, audioData: Data?, filename: String?, folderId: String?) async throws -> VoiceSynthesisResponse
 }
