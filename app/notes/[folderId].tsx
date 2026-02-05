@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Alert,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useLocalSearchParams, useRouter, Stack, useFocusEffect } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
@@ -80,7 +81,7 @@ export default function NoteListScreen() {
         transcript: n.preview || '',
         duration: n.duration || 0,
         actions: {
-          calendar: Array.from({ length: n.calendar_count }, (_, i) => ({ id: String(i + 1), title: 'Event', date: '', time: '' })),
+          calendar: Array.from({ length: n.calendar_count }, (_, i) => ({ id: String(i + 1), title: 'Event', date: '', time: '', status: 'pending' as const })),
           email: Array.from({ length: n.email_count }, (_, i) => ({ id: String(i + 1), to: '', subject: '', status: 'draft' as const })),
           reminders: Array.from({ length: n.reminder_count }, (_, i) => ({ id: String(i + 1), title: 'Reminder', dueDate: '' })),
           nextSteps: [],
@@ -102,11 +103,27 @@ export default function NoteListScreen() {
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
 
+    // Separate pinned notes first
+    const pinnedNotes: Note[] = [];
+    const unpinnedNotes: Note[] = [];
+
+    filteredNotes.forEach((note) => {
+      if (note.isPinned) {
+        pinnedNotes.push(note);
+      } else {
+        unpinnedNotes.push(note);
+      }
+    });
+
+    // Sort pinned notes by date (newest first)
+    pinnedNotes.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+    // Group unpinned notes by date
     const todayNotes: Note[] = [];
     const weekNotes: Note[] = [];
     const olderNotes: Note[] = [];
 
-    filteredNotes.forEach((note) => {
+    unpinnedNotes.forEach((note) => {
       const noteDate = new Date(note.timestamp);
       if (noteDate >= today) {
         todayNotes.push(note);
@@ -118,6 +135,11 @@ export default function NoteListScreen() {
     });
 
     const result: Section[] = [];
+
+    // Pinned section always appears first (if there are pinned notes)
+    if (pinnedNotes.length > 0) {
+      result.push({ title: 'Pinned', data: pinnedNotes });
+    }
     if (todayNotes.length > 0) {
       result.push({ title: 'Today', data: todayNotes });
     }
@@ -277,7 +299,15 @@ export default function NoteListScreen() {
 
   const renderSectionHeader = ({ section }: { section: Section }) => (
     <View style={styles.sectionHeader}>
-      <Text style={styles.sectionTitle}>{section.title}</Text>
+      {section.title === 'Pinned' && (
+        <Ionicons name="pin" size={18} color="#FF9500" style={styles.pinnedIcon} />
+      )}
+      <Text style={[
+        styles.sectionTitle,
+        section.title === 'Pinned' && styles.pinnedSectionTitle
+      ]}>
+        {section.title}
+      </Text>
     </View>
   );
 
@@ -370,6 +400,8 @@ const styles = StyleSheet.create({
     paddingTop: 8,
   },
   sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingVertical: 12,
     paddingHorizontal: 4,
     backgroundColor: NotesColors.background,
@@ -378,6 +410,12 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '700',
     color: NotesColors.textPrimary,
+  },
+  pinnedSectionTitle: {
+    color: '#FF9500',
+  },
+  pinnedIcon: {
+    marginRight: 6,
   },
   emptyContainer: {
     flex: 1,

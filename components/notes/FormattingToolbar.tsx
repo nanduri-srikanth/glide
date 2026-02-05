@@ -16,7 +16,7 @@ import { NotesColors } from '@/constants/theme';
 import { useRecording } from '@/hooks/useRecording';
 
 interface FormattingToolbarProps {
-  inputRef: React.RefObject<TextInput>;
+  inputRef: React.RefObject<TextInput | null>;
   onFormat: (format: FormatType, value?: string) => void;
   onRecordingComplete: (audioUri: string, duration: number) => void;
   activeFormats?: Set<FormatType>;
