@@ -66,7 +66,7 @@ export interface Folder {
   id: string;
   name: string;
   icon: string; // SF Symbol name
-  noteCount: number;
+  noteCount?: number; // Made optional for DBFolder compatibility
   color?: string;
   isSystem?: boolean; // For "All iCloud", "Notes", "Recently Deleted"
   sortOrder: number;
