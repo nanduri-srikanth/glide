@@ -54,6 +54,9 @@ struct GlideApp: App {
     // MARK: - Setup
 
     private func setupApp() {
+        // Security check: Detect jailbroken devices
+        performSecurityCheck()
+
         do {
             // Initialize database
             try DatabaseManager.shared.initialize()
@@ -77,6 +80,37 @@ struct GlideApp: App {
         } catch {
             print("❌ Failed to initialize database: \(error.localizedDescription)")
             // In production, you might want to show an error to the user
+        }
+    }
+
+    // MARK: - Security
+
+    /// Perform security checks on app launch
+    private func performSecurityCheck() {
+        #if DEBUG
+        print("🔒 Performing security checks...")
+        #endif
+
+        let report = SecurityService.securityReport()
+
+        #if DEBUG
+        print("🔒 Security Report: \(report.description)")
+        #endif
+
+        // Log jailbreak detection (without blocking) for monitoring
+        if report.isJailbroken {
+            print("⚠️ JAILBREAK DETECTED: \(report.description)")
+
+            // In production, show alert and exit app
+            #if !DEBUG
+            securityReport = report
+            showJailbreakAlert = true
+            #endif
+
+            // In DEBUG mode, just log the detection
+            #if DEBUG
+            print("⚠️ DEBUG MODE: Allowing app to run on jailbroken device for testing")
+            #endif
         }
     }
 
