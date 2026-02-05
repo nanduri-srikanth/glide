@@ -1,6 +1,6 @@
 """Voice processing Pydantic schemas."""
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Literal
 from uuid import UUID
 from pydantic import BaseModel
 
@@ -35,6 +35,39 @@ class ReminderActionExtracted(BaseModel):
     due_date: str  # ISO format
     due_time: Optional[str] = None
     priority: str = "medium"
+    intent_source: Optional[str] = None  # COMMITMENT_TO_SELF | COMMITMENT_TO_OTHER | TIME_BINDING | DELEGATION
+
+
+# New schema classes for enhanced prompt engineering
+
+class ClassificationHints(BaseModel):
+    """Schema for type classification hints when confidence is low."""
+    considered_types: List[str] = []
+    ambiguity_note: Optional[str] = None
+
+
+class TypeDetection(BaseModel):
+    """Schema for hybrid note type detection."""
+    primary_type: str  # PLANNING | MEETING | BRAINSTORM | TASKS | REFLECTION | TECHNICAL | QUICK_NOTE
+    secondary_type: Optional[str] = None
+    confidence: float = 1.0
+    hybrid_format: bool = False
+    classification_hints: Optional[ClassificationHints] = None
+
+
+class RelatedEntities(BaseModel):
+    """Schema for entities mentioned in the note."""
+    people: List[str] = []
+    projects: List[str] = []
+    companies: List[str] = []
+    concepts: List[str] = []
+
+
+class OpenLoop(BaseModel):
+    """Schema for unresolved items that need future attention."""
+    item: str
+    status: str  # unresolved | question | blocked | deferred
+    context: Optional[str] = None
 
 
 class ActionExtractionResult(BaseModel):
@@ -47,6 +80,9 @@ class ActionExtractionResult(BaseModel):
     folder: str
     tags: List[str]
     summary: Optional[str] = None
+    type_detection: Optional[TypeDetection] = None
+    related_entities: Optional[RelatedEntities] = None
+    open_loops: List[OpenLoop] = []
     calendar: List[CalendarActionExtracted] = []
     email: List[EmailActionExtracted] = []
     reminders: List[ReminderActionExtracted] = []
@@ -94,6 +130,9 @@ class SynthesisResult(BaseModel):
     folder: str
     tags: List[str]
     summary: Optional[str] = None
+    type_detection: Optional[TypeDetection] = None
+    related_entities: Optional[RelatedEntities] = None
+    open_loops: List[OpenLoop] = []
     calendar: List[CalendarActionExtracted] = []
     email: List[EmailActionExtracted] = []
     reminders: List[ReminderActionExtracted] = []

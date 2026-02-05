@@ -51,14 +51,67 @@ export interface SmartSynthesisResponse extends SynthesisResponse {
   decision?: UpdateDecision;
 }
 
+// New schema types for enhanced prompt engineering
+
+export interface ClassificationHints {
+  considered_types: string[];
+  ambiguity_note: string | null;
+}
+
+export interface TypeDetection {
+  primary_type: 'PLANNING' | 'MEETING' | 'BRAINSTORM' | 'TASKS' | 'REFLECTION' | 'TECHNICAL' | 'QUICK_NOTE';
+  secondary_type: 'PLANNING' | 'MEETING' | 'BRAINSTORM' | 'TASKS' | 'REFLECTION' | 'TECHNICAL' | 'QUICK_NOTE' | null;
+  confidence: number;
+  hybrid_format: boolean;
+  classification_hints?: ClassificationHints;
+}
+
+export interface RelatedEntities {
+  people: string[];
+  projects: string[];
+  companies: string[];
+  concepts: string[];
+}
+
+export interface OpenLoop {
+  item: string;
+  status: 'unresolved' | 'question' | 'blocked' | 'deferred';
+  context: string | null;
+}
+
+export interface ReminderAction {
+  title: string;
+  due_date: string;
+  due_time: string | null;
+  priority: string;
+  intent_source?: 'COMMITMENT_TO_SELF' | 'COMMITMENT_TO_OTHER' | 'TIME_BINDING' | 'DELEGATION';
+}
+
+export interface CalendarAction {
+  title: string;
+  date: string;
+  time: string | null;
+  location: string | null;
+  attendees: string[];
+}
+
+export interface EmailAction {
+  to: string;
+  subject: string;
+  body: string;
+}
+
 export interface ActionExtractionResult {
   title: string;
   folder: string;
   tags: string[];
   summary: string | null;
-  calendar: { title: string; date: string; time: string | null; location: string | null; attendees: string[] }[];
-  email: { to: string; subject: string; body: string }[];
-  reminders: { title: string; due_date: string; due_time: string | null; priority: string }[];
+  type_detection?: TypeDetection;
+  related_entities?: RelatedEntities;
+  open_loops?: OpenLoop[];
+  calendar: CalendarAction[];
+  email: EmailAction[];
+  reminders: ReminderAction[];
   next_steps: string[];
 }
 

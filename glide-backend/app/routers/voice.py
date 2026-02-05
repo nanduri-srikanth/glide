@@ -615,10 +615,11 @@ async def add_to_synthesis(
 
         # Determine update strategy
         if resynthesize is True:
-            # Force re-synthesis
+            # Force COMPREHENSIVE re-synthesis - preserves all information
             synthesis = await llm_service.resynthesize_content(
                 input_history=input_history,
                 user_context=user_context,
+                comprehensive=True,  # Use comprehensive mode to avoid info loss
             )
             note.transcript = synthesis.get("narrative", note.transcript)
             note.title = synthesis.get("title", note.title)
@@ -629,28 +630,37 @@ async def add_to_synthesis(
             decision_info = {
                 "update_type": "resynthesize",
                 "confidence": 1.0,
-                "reason": "User requested full re-synthesis"
+                "reason": "User requested comprehensive re-synthesis"
             }
         elif resynthesize is False:
-            # Force append without re-synthesis
-            extraction = await llm_service.extract_actions(
-                transcript=new_content,
+            # Summarize new content in ISOLATION (not raw append)
+            # This creates a proper summary of just the new content
+            new_content_summary = await llm_service.summarize_new_content(
+                new_transcript=new_content,
+                existing_title=note.title,
                 user_context=user_context,
             )
             timestamp_str = now.strftime("%b %d, %Y at %I:%M %p")
-            separator = f"\n\n--- Added on {timestamp_str} ---\n\n"
-            note.transcript = (note.transcript or "") + separator + new_content
-            note.tags = list(set(note.tags or []) | set(extraction.tags))[:10]
+            separator = f"\n\n---\n\n**Update ({timestamp_str})**\n\n"
+            summarized_content = new_content_summary.get("summary", new_content)
+            # Append the summarized content, not raw transcript
+            note.transcript = (note.transcript or "") + separator + summarized_content
+            # Update the note's summary to include the new content
+            if note.summary:
+                note.summary = note.summary + f"\n\n**Update:** {summarized_content[:500]}"
+            else:
+                note.summary = summarized_content
+            note.tags = list(set(note.tags or []) | set(new_content_summary.get("tags", [])))[:10]
             new_actions = {
-                "calendar": [c.model_dump() for c in extraction.calendar],
-                "email": [e.model_dump() for e in extraction.email],
-                "reminders": [r.model_dump() for r in extraction.reminders],
-                "next_steps": extraction.next_steps,
+                "calendar": new_content_summary.get("calendar", []),
+                "email": new_content_summary.get("email", []),
+                "reminders": new_content_summary.get("reminders", []),
+                "next_steps": [],
             }
             decision_info = {
                 "update_type": "append",
                 "confidence": 1.0,
-                "reason": "User requested simple append"
+                "reason": "New content summarized and appended in isolation"
             }
         elif auto_decide:
             # Use smart synthesis to decide
@@ -675,25 +685,32 @@ async def add_to_synthesis(
 
             new_actions = synthesis
         else:
-            # Default: just append
-            extraction = await llm_service.extract_actions(
-                transcript=new_content,
+            # Default: summarize new content in isolation and append
+            new_content_summary = await llm_service.summarize_new_content(
+                new_transcript=new_content,
+                existing_title=note.title,
                 user_context=user_context,
             )
             timestamp_str = now.strftime("%b %d, %Y at %I:%M %p")
-            separator = f"\n\n--- Added on {timestamp_str} ---\n\n"
-            note.transcript = (note.transcript or "") + separator + new_content
-            note.tags = list(set(note.tags or []) | set(extraction.tags))[:10]
+            separator = f"\n\n---\n\n**Update ({timestamp_str})**\n\n"
+            summarized_content = new_content_summary.get("summary", new_content)
+            note.transcript = (note.transcript or "") + separator + summarized_content
+            # Update the note's summary to include the new content
+            if note.summary:
+                note.summary = note.summary + f"\n\n**Update:** {summarized_content[:500]}"
+            else:
+                note.summary = summarized_content
+            note.tags = list(set(note.tags or []) | set(new_content_summary.get("tags", [])))[:10]
             new_actions = {
-                "calendar": [c.model_dump() for c in extraction.calendar],
-                "email": [e.model_dump() for e in extraction.email],
-                "reminders": [r.model_dump() for r in extraction.reminders],
-                "next_steps": extraction.next_steps,
+                "calendar": new_content_summary.get("calendar", []),
+                "email": new_content_summary.get("email", []),
+                "reminders": new_content_summary.get("reminders", []),
+                "next_steps": [],
             }
             decision_info = {
                 "update_type": "append",
                 "confidence": 1.0,
-                "reason": "Default append mode"
+                "reason": "New content summarized and appended"
             }
 
         # Update note
@@ -870,9 +887,11 @@ async def resynthesize_note(
             "current_date": now.strftime("%Y-%m-%d"),
         }
 
+        # Use COMPREHENSIVE synthesis to preserve all information
         synthesis = await llm_service.resynthesize_content(
             input_history=input_history,
             user_context=user_context,
+            comprehensive=True,  # Avoid information loss
         )
 
         # Update note with new synthesis
@@ -997,7 +1016,7 @@ async def delete_input(
         if deleted_input.get("duration"):
             note.duration = max(0, (note.duration or 0) - deleted_input.get("duration", 0))
 
-        # Re-synthesize from remaining inputs
+        # Re-synthesize from remaining inputs (comprehensive to preserve info)
         llm_service = LLMService()
         user_context = {
             "timezone": current_user.timezone,
@@ -1007,6 +1026,7 @@ async def delete_input(
         synthesis = await llm_service.resynthesize_content(
             input_history=input_history,
             user_context=user_context,
+            comprehensive=True,  # Preserve remaining information
         )
 
         # Update note with new synthesis

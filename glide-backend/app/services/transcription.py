@@ -51,9 +51,11 @@ class TranscriptionService:
                 )
 
             # Transcribe using Groq Whisper API
+            # Using whisper-large-v3-turbo for 2-3x faster transcription
+            # with nearly identical quality to whisper-large-v3
             with open(temp_path, "rb") as audio:
                 response = self.groq_client.audio.transcriptions.create(
-                    model="whisper-large-v3",
+                    model="whisper-large-v3-turbo",
                     file=audio,
                     response_format="verbose_json",
                 )
@@ -104,7 +106,7 @@ class TranscriptionService:
 
             with open(temp_path, "rb") as audio:
                 groq_response = self.groq_client.audio.transcriptions.create(
-                    model="whisper-large-v3",
+                    model="whisper-large-v3-turbo",
                     file=audio,
                     response_format="verbose_json",
                 )

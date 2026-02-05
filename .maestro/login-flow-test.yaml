@@ -1,0 +1,61 @@
+# Login Flow Test
+# Tests end-to-end login functionality with backend API
+# Prerequisites: Backend must be running on port 8000 (or configured port)
+
+appId: com.snandur2.glide
+---
+- clearState
+- launchApp
+
+# Wait for app to fully load
+- waitForAnimationToEnd
+
+# Take initial screenshot
+- takeScreenshot: "1-app-start"
+
+# Navigate to login screen
+- tapOn:
+    text: ".*[Ll]ogin.*|.*[Ss]ign.*[Ii]n.*"
+    optional: false
+
+# Wait for login screen
+- waitForAnimationToEnd
+
+# Verify login form is visible
+- assertVisible:
+    text: ".*[Ee]mail.*|.*[Uu]sername.*"
+
+# Take screenshot of login form
+- takeScreenshot: "2-login-form"
+
+# Enter test credentials (matching .env.local)
+- tapOn:
+    id: ".*email.*|.*username.*|.*Email.*"
+- inputText: "devtest@glide.app"
+
+# Enter password
+- tapOn:
+    id: ".*password.*|.*Password.*"
+- inputText: "test123"
+
+# Take screenshot before submitting
+- takeScreenshot: "3-credentials-entered"
+
+# Submit login form
+- tapOn:
+    text: ".*[Ll]ogin.*|.*[Ss]ign.*[Ii]n.*|.*[Ss]ubmit.*"
+
+# Wait for API response and navigation
+- waitForAnimationToEnd
+
+# Verify successful login - should see home screen or notes list
+- assertVisible:
+    text: ".*[Nn]otes.*|.*[Rr]ecord.*|.*[Hh]ome.*|.*[Gg]lide.*"
+    optional: true
+
+# Take screenshot of successful login
+- takeScreenshot: "4-login-success"
+
+# Verify no error messages
+- assertNotVisible:
+    text: ".*[Ii]nvalid.*|.*[Ee]rror.*|.*[Ff]ailed.*"

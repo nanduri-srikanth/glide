@@ -62,11 +62,18 @@ Transcript:
 
 {context_str}
 
+## FIELD DEFINITIONS
+
+**summary** (card preview)
+- 2-4 sentence preview for note card/list view
+- Captures essence without opening the note
+- Think: "What would I want to see in a notification?"
+
 ## SUMMARY INSTRUCTIONS
 This is YOUR note—write it as a refined version of your own thoughts, not an observer's description.
 
 ### Step 1: Detect the Note Type
-First, identify what kind of note this is:
+First, identify what kind of note this is and return type detection metadata:
 
 **MEETING** — Discussion with others, decisions made, follow-ups needed
 **BRAINSTORM** — Exploring ideas, possibilities, creative thinking
@@ -76,10 +83,13 @@ First, identify what kind of note this is:
 **TECHNICAL** — Problem-solving, debugging, implementation details
 **QUICK_NOTE** — Brief reminder or single thought
 
+Notes can be HYBRID (e.g., PLANNING + TASKS, MEETING + TASKS):
+- If content fits multiple types, identify primary_type and secondary_type
+- Use hybrid_format: true to blend formatting approaches
+
 ### Step 2: Format According to Type
 
 **MEETING format:**
-```
 ## Context
 Who, what, when — one line
 
@@ -90,65 +100,41 @@ Who, what, when — one line
 
 ## Follow-ups
 What needs to happen next (captured as reminders separately)
-```
 
 **BRAINSTORM format:**
-```
 ## The Idea
 Core concept in 1-2 sentences
 
 ## Exploration
 Natural prose exploring the idea, connections, possibilities.
-Multiple paragraphs for different angles.
 
 ## Open Questions
 - Unresolved aspects to think through
-```
 
 **TASKS format:**
-```
 ## Overview
 What this batch of tasks is about
 
 ## Tasks
 - [ ] Task 1
 - [ ] Task 2
-- [ ] Task 3
-
 (Individual tasks also captured as reminders)
-```
 
 **PLANNING format:**
-```
 ## Goal
 What I'm trying to achieve
 
 ## Options Considered
 **Option A:** description, pros/cons
-**Option B:** description, pros/cons
 
 ## Decision / Next Step
 What I decided or need to decide
-```
 
 **REFLECTION format:**
-Natural flowing prose. Paragraph breaks between different threads of thought.
-Preserve emotional context. No forced structure—let it breathe.
+Natural flowing prose. Preserve emotional context. No forced structure.
 
 **TECHNICAL format:**
-```
-## Problem
-What I'm trying to solve
-
-## Approach
-How I'm thinking about it / what I tried
-
-## Details
-Technical specifics, code concepts, implementation notes
-
-## Status
-Where things stand, what's next
-```
+## Problem / ## Approach / ## Details / ## Status
 
 **QUICK_NOTE format:**
 Just the essential info, 2-4 sentences. No headers needed.
@@ -157,39 +143,76 @@ Just the essential info, 2-4 sentences. No headers needed.
 - Match the original register (casual, professional, frustrated, excited)
 - First-person where natural
 - Preserve personality—don't sanitize or formalize
-- Keep nuance and caveats
 
 ### Comprehensiveness
 - Capture specifics: names, numbers, dates, exact phrasing
 - Include reasoning, not just conclusions
 - Note uncertainties: *[unclear: audio garbled here]*
-- Don't compress into vague summaries
 
-## PATTERN RECOGNITION - Look for these specific patterns:
+## ACTION EXTRACTION — Intent-Based Classification
 
-CALENDAR EVENTS - Create when you detect:
-- Meetings: "meeting with", "call with", "sync with", "catch up with"
-- Appointments: "appointment", "scheduled for", "at [time]", "on [date]"
-- Events: "dinner", "lunch", "conference", "presentation", "interview"
-- Time references: specific dates, "next Monday", "tomorrow at 3pm"
+For each statement or thought, classify the underlying intent:
 
-EMAIL ACTIONS - Create when you detect:
-- Direct mentions: "email", "send", "write to", "reply to", "follow up with"
-- Communication intent: "let them know", "inform", "update [person]", "reach out to"
-- Include recipient, subject, and draft the email body based on context
+### Intent Types:
 
-REMINDERS - Create when you detect:
-- Task lists: "I need to", "don't forget to", "remember to", "make sure to"
-- To-do items: "buy", "pick up", "call", "check", "review", "submit"
-- Deadlines: "by Friday", "before the meeting", "this week"
-- Any item in a list format (numbered or bulleted mentally)
+**COMMITMENT_TO_SELF**
+- Signals: "I need to", "I should", "gotta", "have to", "want to", "planning to"
+- → Creates: Reminder
+
+**COMMITMENT_TO_OTHER**
+- Signals: "I'll send", "let them know", "loop in", "update X", "get back to", "follow up with"
+- Also catches: Any communication obligation, even without "email" keyword
+- → Creates: Email draft OR Reminder
+
+**TIME_BINDING**
+- Signals: Any date, time, day reference ("Tuesday", "3pm", "next week", "by Friday")
+- Combined with people: → Calendar event
+- Combined with task: → Reminder with due date
+
+**DELEGATION**
+- Signals: "Ask X to", "have X do", "X needs to", "waiting on X"
+- → Creates: Reminder with context about the delegation
+
+**OPEN_LOOP**
+- Signals: "need to figure out", "not sure yet", "have to research", unresolved questions
+- → Creates: Entry in open_loops array (NOT a reminder unless explicitly actionable)
+
+### Classification Rules:
+1. One statement can have MULTIPLE intents
+2. Implicit > Explicit ("loop in the team" = Email without "email" keyword)
+3. Extract EVERY actionable item separately (5 items = 5 reminders)
+4. Preserve context in action titles ("Email Sarah re: Q3 deck" not just "Email Sarah")
+5. Distinguish actions from open loops - don't create reminders for unresolved questions
 
 Extract and return ONLY valid JSON (no markdown, no explanation) with this exact structure:
 {{
+  "type_detection": {{
+    "primary_type": "PLANNING | MEETING | BRAINSTORM | TASKS | REFLECTION | TECHNICAL | QUICK_NOTE",
+    "secondary_type": "same options or null",
+    "confidence": 0.0-1.0,
+    "hybrid_format": true | false,
+    "classification_hints": {{
+      "considered_types": ["TYPE1", "TYPE2"],
+      "ambiguity_note": "string if confidence < 0.8, otherwise null"
+    }}
+  }},
   "title": "Brief descriptive title for this note (5-10 words max)",
   "folder": "{folders_str}",
   "tags": ["relevant", "tags", "max5"],
-  "summary": "Summary following the instructions above - match user's tone and style",
+  "summary": "2-4 sentence card preview - match user's tone",
+  "related_entities": {{
+    "people": ["names mentioned"],
+    "projects": ["project names"],
+    "companies": ["company names"],
+    "concepts": ["key concepts"]
+  }},
+  "open_loops": [
+    {{
+      "item": "Description of unresolved item",
+      "status": "unresolved | question | blocked | deferred",
+      "context": "Why this is unresolved"
+    }}
+  ],
   "calendar": [
     {{
       "title": "Event name",
@@ -208,10 +231,11 @@ Extract and return ONLY valid JSON (no markdown, no explanation) with this exact
   ],
   "reminders": [
     {{
-      "title": "Clear, actionable reminder text",
+      "title": "Clear, actionable reminder text WITH CONTEXT",
       "due_date": "YYYY-MM-DD",
       "due_time": "HH:MM (optional)",
-      "priority": "low|medium|high"
+      "priority": "low|medium|high",
+      "intent_source": "COMMITMENT_TO_SELF | COMMITMENT_TO_OTHER | TIME_BINDING | DELEGATION"
     }}
   ]
 }}
@@ -221,11 +245,12 @@ Rules:
 2. Be thorough - if someone lists multiple items, create a reminder for EACH item
 3. Use realistic dates based on context (if "next Tuesday" is mentioned, calculate the actual date)
 4. For emails, draft complete professional content with greeting and sign-off placeholder
-5. For reminders, make titles clear and actionable (e.g., "Buy groceries" not just "groceries")
+5. For reminders, make titles clear and actionable WITH CONTEXT
 6. Categorize into the most appropriate folder
 7. Extract 2-5 relevant tags
 8. If no actions of a type are found, use empty array []
-9. Return ONLY the JSON object, nothing else"""
+9. Capture open loops separately - don't create reminders for unresolved questions
+10. Return ONLY the JSON object, nothing else"""
 
         response = self.client.chat.completions.create(
             model=self.MODEL,
@@ -263,6 +288,9 @@ Rules:
             folder=data.get("folder", "Personal"),
             tags=data.get("tags", [])[:5],  # Limit to 5 tags
             summary=data.get("summary"),
+            type_detection=data.get("type_detection"),
+            related_entities=data.get("related_entities"),
+            open_loops=data.get("open_loops", []),
             calendar=data.get("calendar", []),
             email=data.get("email", []),
             reminders=data.get("reminders", []),
@@ -338,21 +366,34 @@ NEW AUDIO TRANSCRIPT (just recorded):
 
 {context_str}
 
-PATTERN RECOGNITION - Look for these specific patterns in the NEW content:
+## ACTION EXTRACTION — Intent-Based Classification
 
-CALENDAR EVENTS - Create when you detect:
-- Meetings: "meeting with", "call with", "sync with", "catch up with"
-- Appointments: "appointment", "scheduled for", "at [time]", "on [date]"
-- Events: "dinner", "lunch", "conference", "presentation", "interview"
+For each statement or thought in the NEW content, classify the underlying intent:
 
-EMAIL ACTIONS - Create when you detect:
-- Direct mentions: "email", "send", "write to", "reply to", "follow up with"
-- Communication intent: "let them know", "inform", "update [person]"
+### Intent Types:
 
-REMINDERS - Create when you detect:
-- Task lists: "I need to", "don't forget to", "remember to", "make sure to"
-- To-do items: any actionable task mentioned
-- Each item in a list should be a separate reminder
+**COMMITMENT_TO_SELF**
+- Signals: "I need to", "I should", "gotta", "have to", "want to", "planning to"
+- → Creates: Reminder
+
+**COMMITMENT_TO_OTHER**
+- Signals: "I'll send", "let them know", "loop in", "update X", "get back to", "follow up with"
+- → Creates: Email draft OR Reminder
+
+**TIME_BINDING**
+- Signals: Any date, time, day reference
+- Combined with people: → Calendar event
+- Combined with task: → Reminder with due date
+
+**DELEGATION**
+- Signals: "Ask X to", "have X do", "X needs to", "waiting on X"
+- → Creates: Reminder with context
+
+### Classification Rules:
+1. One statement can have MULTIPLE intents
+2. Implicit > Explicit ("loop in the team" = Email without "email" keyword)
+3. Extract EVERY actionable item separately
+4. Preserve context in action titles
 
 IMPORTANT: Only extract actions from the NEW transcript that are genuinely new additions.
 Do NOT duplicate actions that are already implied by the existing transcript.
@@ -382,10 +423,11 @@ Extract and return ONLY valid JSON (no markdown, no explanation) with this exact
   ],
   "reminders": [
     {{
-      "title": "Clear, actionable reminder text",
+      "title": "Clear, actionable reminder text WITH CONTEXT",
       "due_date": "YYYY-MM-DD",
       "due_time": "HH:MM (optional)",
-      "priority": "low|medium|high"
+      "priority": "low|medium|high",
+      "intent_source": "COMMITMENT_TO_SELF | COMMITMENT_TO_OTHER | TIME_BINDING | DELEGATION"
     }}
   ]
 }}
@@ -561,11 +603,23 @@ Your job is to merge these into ONE coherent narrative that flows naturally.
 
 {context_str}
 
+## FIELD DEFINITIONS
+
+**narrative** (full content)
+- The complete, formatted note content
+- What the user reads when they open the note
+- Comprehensive — nothing important omitted
+
+**summary** (card preview)
+- 2-4 sentence preview for note card/list view
+- Captures essence without opening the note
+- Always much shorter than narrative
+
 ## NARRATIVE & SUMMARY INSTRUCTIONS
 This is YOUR note—write as a refined version of your own thinking, not a third-party description.
 
 ### Step 1: Detect the Note Type
-First, identify what kind of note this is:
+First, identify what kind of note this is and return type detection metadata:
 
 **MEETING** — Discussion with others, decisions made, follow-ups needed
 **BRAINSTORM** — Exploring ideas, possibilities, creative thinking
@@ -575,125 +629,94 @@ First, identify what kind of note this is:
 **TECHNICAL** — Problem-solving, debugging, implementation details
 **QUICK_NOTE** — Brief reminder or single thought
 
+Notes can be HYBRID (e.g., PLANNING + TASKS, MEETING + TASKS):
+- If content fits multiple types, identify primary_type and secondary_type
+- Use hybrid_format: true to blend formatting approaches
+
 ### Step 2: Format the Narrative According to Type
 
-**MEETING format:**
-```
-## Context
-Who, what, when — one line
-
-## Key Points
-- Main discussion topics as bullets
-- Decisions made (prefix with ✓)
-- Concerns raised
-
-## Follow-ups
-What needs to happen next
-```
-
-**BRAINSTORM format:**
-```
-## The Idea
-Core concept in 1-2 sentences
-
-## Exploration
-Natural prose exploring the idea, connections, possibilities.
-Multiple paragraphs for different angles.
-
-## Open Questions
-- Unresolved aspects to think through
-```
-
-**TASKS format:**
-```
-## Overview
-What this batch of tasks is about
-
-## Tasks
-- [ ] Task 1
-- [ ] Task 2
-- [ ] Task 3
-```
-
-**PLANNING format:**
-```
-## Goal
-What I'm trying to achieve
-
-## Options Considered
-**Option A:** description, pros/cons
-**Option B:** description, pros/cons
-
-## Decision / Next Step
-What I decided or need to decide
-```
-
-**REFLECTION format:**
-Natural flowing prose. Paragraph breaks between different threads of thought.
-Preserve emotional context. No forced structure—let it breathe.
-
-**TECHNICAL format:**
-```
-## Problem
-What I'm trying to solve
-
-## Approach
-How I'm thinking about it / what I tried
-
-## Details
-Technical specifics, implementation notes
-
-## Status
-Where things stand, what's next
-```
-
-**QUICK_NOTE format:**
-Just the essential info, 2-4 sentences. No headers needed.
+**MEETING format:** ## Context / ## Key Points / ## Follow-ups
+**BRAINSTORM format:** ## The Idea / ## Exploration / ## Open Questions
+**TASKS format:** ## Overview / ## Tasks (checkboxes)
+**PLANNING format:** ## Goal / ## Options Considered / ## Decision
+**REFLECTION format:** Natural flowing prose, no headers
+**TECHNICAL format:** ## Problem / ## Approach / ## Details / ## Status
+**QUICK_NOTE format:** 2-4 sentences, no headers
 
 ### Voice & Tone
 - Match the original register (casual, professional, frustrated, excited)
-- First-person where natural ("I need to..." not "The user needs to...")
+- First-person where natural
 - Preserve personality—don't sanitize or formalize
-- Keep nuance, caveats, and emotional context
-
-### Comprehensiveness
-- Capture specifics: names, numbers, dates, exact phrasing
-- Include reasoning, not just conclusions
-- Note uncertainties: *[unclear: audio garbled here]*
 
 ## NARRATIVE RULES
 1. Create a single, cohesive narrative that integrates both inputs naturally
 2. Do NOT separate "typed" vs "spoken" - merge them into one flowing text
 3. Fix grammar, remove filler words, but PRESERVE the user's voice and intent
-4. If there are contradictions, prefer the more recent/specific information
 
-## PATTERN RECOGNITION - Look for these specific patterns:
+## ACTION EXTRACTION — Intent-Based Classification
 
-CALENDAR EVENTS - Create when you detect:
-- Meetings: "meeting with", "call with", "sync with", "catch up with"
-- Appointments: "appointment", "scheduled for", "at [time]", "on [date]"
-- Events: "dinner", "lunch", "conference", "presentation", "interview"
-- Time references: specific dates, "next Monday", "tomorrow at 3pm"
+For each statement or thought, classify the underlying intent:
 
-EMAIL ACTIONS - Create when you detect:
-- Direct mentions: "email", "send", "write to", "reply to", "follow up with"
-- Communication intent: "let them know", "inform", "update [person]", "reach out to"
-- Include recipient, subject, and draft the complete email body
+### Intent Types:
 
-REMINDERS - Create when you detect:
-- Task lists: "I need to", "don't forget to", "remember to", "make sure to"
-- To-do items: "buy", "pick up", "call", "check", "review", "submit"
-- Deadlines: "by Friday", "before the meeting", "this week"
-- Lists of items: each item in a list becomes a SEPARATE reminder
-- Shopping lists, errands, tasks - each item is a reminder
+**COMMITMENT_TO_SELF**
+- Signals: "I need to", "I should", "gotta", "have to", "want to"
+- → Creates: Reminder
+
+**COMMITMENT_TO_OTHER**
+- Signals: "I'll send", "let them know", "loop in", "update X", "follow up with"
+- → Creates: Email draft OR Reminder
+
+**TIME_BINDING**
+- Signals: Any date, time, day reference
+- Combined with people: → Calendar event
+- Combined with task: → Reminder with due date
+
+**DELEGATION**
+- Signals: "Ask X to", "have X do", "waiting on X"
+- → Creates: Reminder with context
+
+**OPEN_LOOP**
+- Signals: "need to figure out", "not sure yet", unresolved questions
+- → Creates: Entry in open_loops array (NOT a reminder)
+
+### Classification Rules:
+1. One statement can have MULTIPLE intents
+2. Implicit > Explicit ("loop in the team" = Email)
+3. Extract EVERY actionable item separately
+4. Preserve context in action titles
+5. Distinguish actions from open loops
 
 Return ONLY valid JSON (no markdown, no explanation) with this exact structure:
 {{
+  "type_detection": {{
+    "primary_type": "PLANNING | MEETING | BRAINSTORM | TASKS | REFLECTION | TECHNICAL | QUICK_NOTE",
+    "secondary_type": "same options or null",
+    "confidence": 0.0-1.0,
+    "hybrid_format": true | false,
+    "classification_hints": {{
+      "considered_types": ["TYPE1", "TYPE2"],
+      "ambiguity_note": "string if confidence < 0.8, otherwise null"
+    }}
+  }},
   "narrative": "The synthesized, cohesive narrative combining all inputs - preserve user's voice",
   "title": "Brief descriptive title for this note (5-10 words max)",
   "folder": "{folders_str}",
   "tags": ["relevant", "tags", "max5"],
-  "summary": "Summary following instructions above - match user's tone and length to content",
+  "summary": "2-4 sentence card preview - NOT the full narrative",
+  "related_entities": {{
+    "people": ["names mentioned"],
+    "projects": ["project names"],
+    "companies": ["company names"],
+    "concepts": ["key concepts"]
+  }},
+  "open_loops": [
+    {{
+      "item": "Description of unresolved item",
+      "status": "unresolved | question | blocked | deferred",
+      "context": "Why this is unresolved"
+    }}
+  ],
   "calendar": [
     {{
       "title": "Event name",
@@ -712,10 +735,11 @@ Return ONLY valid JSON (no markdown, no explanation) with this exact structure:
   ],
   "reminders": [
     {{
-      "title": "Clear, actionable reminder text",
+      "title": "Clear, actionable reminder text WITH CONTEXT",
       "due_date": "YYYY-MM-DD",
       "due_time": "HH:MM (optional)",
-      "priority": "low|medium|high"
+      "priority": "low|medium|high",
+      "intent_source": "COMMITMENT_TO_SELF | COMMITMENT_TO_OTHER | TIME_BINDING | DELEGATION"
     }}
   ]
 }}
@@ -726,7 +750,8 @@ Rules:
 3. Be thorough with reminders - if someone lists 5 items, create 5 reminders
 4. Use realistic dates based on context
 5. If no actions of a type are found, use empty array []
-6. Return ONLY the JSON object, nothing else"""
+6. Capture open loops separately from actions
+7. Return ONLY the JSON object, nothing else"""
 
         response = self.client.chat.completions.create(
             model=self.MODEL,
@@ -754,6 +779,9 @@ Rules:
                 "folder": "Personal",
                 "tags": [],
                 "summary": combined_content[:200] + "..." if len(combined_content) > 200 else combined_content,
+                "type_detection": None,
+                "related_entities": None,
+                "open_loops": [],
                 "calendar": [],
                 "email": [],
                 "reminders": [],
@@ -766,6 +794,9 @@ Rules:
             "folder": data.get("folder", "Personal"),
             "tags": data.get("tags", [])[:5],
             "summary": data.get("summary"),
+            "type_detection": data.get("type_detection"),
+            "related_entities": data.get("related_entities"),
+            "open_loops": data.get("open_loops", []),
             "calendar": data.get("calendar", []),
             "email": data.get("email", []),
             "reminders": data.get("reminders", []),
@@ -795,24 +826,179 @@ Rules:
             "folder": "Personal",
             "tags": [],
             "summary": narrative[:200] + "..." if len(narrative) > 200 else narrative,
+            "type_detection": None,
+            "related_entities": None,
+            "open_loops": [],
             "calendar": [],
             "email": [],
             "reminders": [],
             "next_steps": [],
         }
 
-    async def resynthesize_content(
+    async def summarize_new_content(
         self,
-        input_history: list,
+        new_transcript: str,
+        existing_title: str,
         user_context: Optional[dict] = None
     ) -> dict:
         """
+        Summarize new content in isolation for appending to an existing note.
+        Creates a well-structured summary of just the new content without
+        merging with existing content.
+
+        Args:
+            new_transcript: The newly transcribed audio content
+            existing_title: The title of the existing note for context
+            user_context: Optional context about the user
+
+        Returns:
+            dict with summary, tags, and extracted actions from new content only
+        """
+        # Return mock response when API key not configured
+        if not self.client:
+            return {
+                "summary": new_transcript[:300] + "..." if len(new_transcript) > 300 else new_transcript,
+                "tags": [],
+                "calendar": [],
+                "email": [],
+                "reminders": [],
+            }
+
+        context_str = ""
+        if user_context:
+            context_str = f"""
+User context:
+- Timezone: {user_context.get('timezone', 'America/Chicago')}
+- Current date: {user_context.get('current_date', 'today')}
+"""
+
+        prompt = f"""You are summarizing NEW CONTENT being added to an existing note.
+This is an addition/update to the note titled: "{existing_title}"
+
+NEW AUDIO TRANSCRIPT:
+{new_transcript}
+
+{context_str}
+
+## TASK
+Create a well-structured summary of ONLY this new content. This will be appended
+to the existing note as a new section.
+
+## FORMATTING GUIDELINES
+- Write in first-person, preserving the speaker's voice
+- Use markdown formatting where appropriate (headers, bullets, bold)
+- Capture ALL specific details: names, numbers, dates, exact phrasing
+- Include reasoning and context, not just bare facts
+- Match the tone of the original (casual, professional, etc.)
+- If this is a continuation of thoughts, frame it as an update/addition
+
+## LENGTH GUIDELINES
+- For short additions (< 30 seconds): 2-4 sentences
+- For medium additions (30s - 2min): 1-2 paragraphs with bullets if needed
+- For longer additions (> 2min): Multiple paragraphs, use headers if topics shift
+
+## ACTION EXTRACTION — Intent-Based Classification
+
+For each statement or thought, classify the underlying intent:
+
+### Intent Types:
+
+**COMMITMENT_TO_SELF** → Reminder
+- Signals: "I need to", "I should", "gotta", "have to"
+
+**COMMITMENT_TO_OTHER** → Email/Reminder
+- Signals: "I'll send", "let them know", "loop in", "follow up with"
+
+**TIME_BINDING** → Calendar/Reminder with date
+- Signals: Any date, time, day reference
+
+**DELEGATION** → Reminder with context
+- Signals: "Ask X to", "have X do", "waiting on X"
+
+### Classification Rules:
+1. One statement can have MULTIPLE intents
+2. Implicit > Explicit ("loop in the team" = Email)
+3. Extract EVERY actionable item separately
+4. Preserve context in action titles
+
+Return ONLY valid JSON:
+{{
+  "summary": "Well-structured summary of the new content - comprehensive but focused",
+  "tags": ["new", "relevant", "tags"],
+  "calendar": [
+    {{
+      "title": "Event name",
+      "date": "YYYY-MM-DD",
+      "time": "HH:MM (optional)",
+      "location": "optional",
+      "attendees": []
+    }}
+  ],
+  "email": [
+    {{
+      "to": "recipient",
+      "subject": "Subject",
+      "body": "Draft body"
+    }}
+  ],
+  "reminders": [
+    {{
+      "title": "Task description WITH CONTEXT",
+      "due_date": "YYYY-MM-DD",
+      "due_time": "HH:MM (optional)",
+      "priority": "low|medium|high",
+      "intent_source": "COMMITMENT_TO_SELF | COMMITMENT_TO_OTHER | TIME_BINDING | DELEGATION"
+    }}
+  ]
+}}"""
+
+        response = self.client.chat.completions.create(
+            model=self.MODEL,
+            max_tokens=2000,
+            messages=[{"role": "user", "content": prompt}]
+        )
+
+        response_text = response.choices[0].message.content.strip()
+
+        # Handle potential markdown code blocks
+        if response_text.startswith("```"):
+            response_text = response_text.split("```")[1]
+            if response_text.startswith("json"):
+                response_text = response_text[4:]
+            response_text = response_text.strip()
+
+        try:
+            data = json.loads(response_text)
+            return {
+                "summary": data.get("summary", new_transcript),
+                "tags": data.get("tags", [])[:5],
+                "calendar": data.get("calendar", []),
+                "email": data.get("email", []),
+                "reminders": data.get("reminders", []),
+            }
+        except json.JSONDecodeError:
+            return {
+                "summary": new_transcript[:300] + "..." if len(new_transcript) > 300 else new_transcript,
+                "tags": [],
+                "calendar": [],
+                "email": [],
+                "reminders": [],
+            }
+
+    async def resynthesize_content(
+        self,
+        input_history: list,
+        user_context: Optional[dict] = None,
+        comprehensive: bool = True
+    ) -> dict:
+        """
         Re-synthesize content from a history of inputs.
-        Used when user edits and wants to regenerate the narrative.
+        Creates a COMPREHENSIVE narrative that preserves all information.
 
         Args:
             input_history: List of InputHistoryEntry-like dicts with type and content
             user_context: Optional context about the user
+            comprehensive: If True (default), creates longer summaries to avoid info loss
 
         Returns:
             dict with narrative, title, folder, tags, summary, and extracted actions
@@ -830,7 +1016,240 @@ Rules:
         text_input = "\n\n".join(text_parts) if text_parts else ""
         audio_transcript = "\n\n".join(audio_parts) if audio_parts else ""
 
-        return await self.synthesize_content(text_input, audio_transcript, user_context)
+        if comprehensive:
+            return await self.comprehensive_synthesize(text_input, audio_transcript, input_history, user_context)
+        else:
+            return await self.synthesize_content(text_input, audio_transcript, user_context)
+
+    async def comprehensive_synthesize(
+        self,
+        text_input: str,
+        audio_transcript: str,
+        input_history: list,
+        user_context: Optional[dict] = None
+    ) -> dict:
+        """
+        Create a COMPREHENSIVE synthesis that preserves ALL information.
+        Designed for re-synthesis where we want to avoid information loss.
+
+        The output will be longer and more detailed than standard synthesis.
+        """
+        # Combine inputs for context
+        combined_content = ""
+        if text_input and audio_transcript:
+            combined_content = f"TYPED TEXT:\n{text_input}\n\nSPOKEN AUDIO:\n{audio_transcript}"
+        elif text_input:
+            combined_content = text_input
+        elif audio_transcript:
+            combined_content = audio_transcript
+        else:
+            return {
+                "narrative": "",
+                "title": "Empty Note",
+                "folder": "Personal",
+                "tags": [],
+                "summary": None,
+                "calendar": [],
+                "email": [],
+                "reminders": [],
+            }
+
+        # Return mock response when API key not configured
+        if not self.client:
+            return self._mock_synthesis(combined_content, text_input, audio_transcript)
+
+        # Calculate input count for context
+        input_count = len(input_history)
+        total_words = len(combined_content.split())
+
+        # Get user's folders or use defaults
+        folders_list = ['Work', 'Personal', 'Ideas', 'Meetings', 'Projects']
+        if user_context and user_context.get('folders'):
+            folders_list = user_context.get('folders')
+        folders_str = '|'.join(folders_list)
+
+        context_str = ""
+        if user_context:
+            context_str = f"""
+User context:
+- Timezone: {user_context.get('timezone', 'America/Chicago')}
+- Current date: {user_context.get('current_date', 'today')}
+- Your folders: {', '.join(folders_list)}
+"""
+
+        prompt = f"""You are RE-SYNTHESIZING a note from {input_count} separate inputs.
+This is a COMPREHENSIVE re-synthesis - your goal is to PRESERVE ALL INFORMATION.
+
+DO NOT CONDENSE OR LOSE DETAILS. The output should be LONGER and MORE DETAILED
+than a typical summary. Users are adding to their notes over time and don't want
+information loss when re-synthesizing.
+
+INPUTS TO SYNTHESIZE ({total_words} total words):
+{combined_content}
+
+{context_str}
+
+## FIELD DEFINITIONS
+
+**narrative** (full content)
+- The complete, formatted note content
+- Comprehensive — nothing important omitted
+- Length scales with input length
+
+**summary** (card preview)
+- 2-4 sentence preview for note card/list view
+- Always much shorter than narrative
+
+## COMPREHENSIVE SYNTHESIS RULES
+
+1. **PRESERVE EVERYTHING**: Every specific detail, name, number, date, and idea
+   from the inputs should be captured in the output.
+
+2. **EXPAND, DON'T CONDENSE**: If the input is 500 words, the narrative should
+   be 400-600 words, NOT 100 words. Match or exceed input length.
+
+3. **ORGANIZE BY THEME**: Group related information together, but include ALL of it.
+
+4. **MAINTAIN CHRONOLOGY**: When relevant, preserve the order information was added.
+
+5. **CAPTURE NUANCE**: Include hedging, uncertainty, alternatives mentioned.
+
+## NOTE TYPE DETECTION
+First identify what kind of note this is:
+- MEETING — Discussion, decisions, follow-ups
+- BRAINSTORM — Ideas, possibilities, exploration
+- TASKS — To-do items, errands
+- PLANNING — Strategy, goals, options
+- REFLECTION — Personal thoughts, journaling
+- TECHNICAL — Problem-solving, implementation
+- QUICK_NOTE — Brief thoughts
+
+Notes can be HYBRID - identify primary and secondary types if applicable.
+
+## ACTION EXTRACTION — Intent-Based Classification
+
+For each statement or thought, classify the underlying intent:
+
+### Intent Types:
+
+**COMMITMENT_TO_SELF** → Reminder
+- Signals: "I need to", "I should", "gotta", "have to"
+
+**COMMITMENT_TO_OTHER** → Email/Reminder
+- Signals: "I'll send", "let them know", "loop in", "follow up with"
+
+**TIME_BINDING** → Calendar/Reminder with date
+- Signals: Any date, time, day reference
+
+**DELEGATION** → Reminder with context
+- Signals: "Ask X to", "have X do", "waiting on X"
+
+**OPEN_LOOP** → Entry in open_loops array
+- Signals: "need to figure out", "not sure yet", unresolved questions
+
+### Classification Rules:
+1. One statement can have MULTIPLE intents
+2. Implicit > Explicit ("loop in the team" = Email)
+3. Extract EVERY actionable item separately
+4. Preserve context in action titles
+5. Distinguish actions from open loops
+
+Return ONLY valid JSON:
+{{
+  "narrative": "COMPREHENSIVE narrative preserving ALL details from all inputs - use markdown formatting",
+  "title": "Descriptive title (5-10 words)",
+  "folder": "{folders_str}",
+  "tags": ["relevant", "tags", "up-to-5"],
+  "summary": "2-4 sentence card preview - NOT the full narrative",
+  "related_entities": {{
+    "people": ["names mentioned"],
+    "projects": ["project names"],
+    "companies": ["company names"],
+    "concepts": ["key concepts"]
+  }},
+  "open_loops": [
+    {{
+      "item": "Description of unresolved item",
+      "status": "unresolved | question | blocked | deferred",
+      "context": "Why this is unresolved"
+    }}
+  ],
+  "calendar": [
+    {{
+      "title": "Event",
+      "date": "YYYY-MM-DD",
+      "time": "HH:MM (optional)",
+      "location": "optional",
+      "attendees": []
+    }}
+  ],
+  "email": [
+    {{
+      "to": "recipient",
+      "subject": "Subject",
+      "body": "Complete draft"
+    }}
+  ],
+  "reminders": [
+    {{
+      "title": "Clear, actionable task WITH CONTEXT",
+      "due_date": "YYYY-MM-DD",
+      "due_time": "HH:MM (optional)",
+      "priority": "low|medium|high",
+      "intent_source": "COMMITMENT_TO_SELF | COMMITMENT_TO_OTHER | TIME_BINDING | DELEGATION"
+    }}
+  ]
+}}
+
+CRITICAL: The narrative should be COMPREHENSIVE. If 5 items were discussed,
+all 5 should appear. If reasoning was given, include the reasoning.
+DO NOT summarize away important details."""
+
+        response = self.client.chat.completions.create(
+            model=self.MODEL,
+            max_tokens=4000,  # Higher limit for comprehensive output
+            messages=[{"role": "user", "content": prompt}]
+        )
+
+        response_text = response.choices[0].message.content.strip()
+
+        # Handle potential markdown code blocks
+        if response_text.startswith("```"):
+            response_text = response_text.split("```")[1]
+            if response_text.startswith("json"):
+                response_text = response_text[4:]
+            response_text = response_text.strip()
+
+        try:
+            data = json.loads(response_text)
+        except json.JSONDecodeError:
+            return {
+                "narrative": combined_content,
+                "title": "Voice Note",
+                "folder": "Personal",
+                "tags": [],
+                "summary": combined_content,
+                "type_detection": None,
+                "related_entities": None,
+                "open_loops": [],
+                "calendar": [],
+                "email": [],
+                "reminders": [],
+            }
+
+        return {
+            "narrative": data.get("narrative", combined_content),
+            "title": data.get("title", "Voice Note"),
+            "folder": data.get("folder", "Personal"),
+            "tags": data.get("tags", [])[:5],
+            "summary": data.get("summary", data.get("narrative", combined_content)),
+            "type_detection": data.get("type_detection"),
+            "related_entities": data.get("related_entities"),
+            "open_loops": data.get("open_loops", []),
+            "calendar": data.get("calendar", []),
+            "email": data.get("email", []),
+            "reminders": data.get("reminders", []),
+        }
 
     def should_force_resynthesize(
         self,
@@ -916,6 +1335,16 @@ NEW CONTENT TO ADD:
 
 {context_str}
 
+## FIELD DEFINITIONS
+
+**narrative** (full content)
+- The complete, formatted note content
+- Comprehensive — nothing important omitted
+
+**summary** (card preview)
+- 2-4 sentence preview for note card/list view
+- Always much shorter than narrative
+
 DECISION CRITERIA:
 - Choose RESYNTHESIZE if:
   * New content contradicts or corrects existing content
@@ -927,11 +1356,29 @@ DECISION CRITERIA:
   * Same topic, no contradictions
   * Just expanding on existing points
 
-PATTERN RECOGNITION for actions - Look for:
+## ACTION EXTRACTION — Intent-Based Classification
 
-CALENDAR: meetings, appointments, events with dates/times
-EMAIL: "email", "send to", "write to", "follow up with", communication intent
-REMINDERS: task lists, to-do items, "need to", "don't forget", each list item = separate reminder
+For each statement or thought, classify the underlying intent:
+
+### Intent Types:
+
+**COMMITMENT_TO_SELF** → Reminder
+- Signals: "I need to", "I should", "gotta", "have to"
+
+**COMMITMENT_TO_OTHER** → Email/Reminder
+- Signals: "I'll send", "let them know", "loop in", "follow up with"
+
+**TIME_BINDING** → Calendar/Reminder with date
+- Signals: Any date, time, day reference
+
+**DELEGATION** → Reminder with context
+- Signals: "Ask X to", "have X do", "waiting on X"
+
+### Classification Rules:
+1. One statement can have MULTIPLE intents
+2. Implicit > Explicit ("loop in the team" = Email)
+3. Extract EVERY actionable item separately
+4. Preserve context in action titles
 
 Return ONLY valid JSON (no markdown, no explanation) with this structure:
 {{
@@ -945,10 +1392,18 @@ Return ONLY valid JSON (no markdown, no explanation) with this structure:
     "title": "Updated title if changed, otherwise keep existing",
     "folder": "Work|Personal|Ideas|Meetings|Projects",
     "tags": ["relevant", "tags"],
-    "summary": "Updated 2-3 sentence summary",
+    "summary": "2-4 sentence card preview - NOT the full narrative",
     "calendar": [],
     "email": [],
-    "reminders": []
+    "reminders": [
+      {{
+        "title": "Task WITH CONTEXT",
+        "due_date": "YYYY-MM-DD",
+        "due_time": "HH:MM (optional)",
+        "priority": "low|medium|high",
+        "intent_source": "COMMITMENT_TO_SELF | COMMITMENT_TO_OTHER | TIME_BINDING | DELEGATION"
+      }}
+    ]
   }}
 }}
 
@@ -1103,6 +1558,11 @@ First, identify what kind of note this is:
 - REFLECTION — Personal thoughts, processing feelings
 - TECHNICAL — Problem-solving, debugging, implementation
 - QUICK_NOTE — Brief reminder or single thought
+
+Notes can be HYBRID (e.g., PLANNING + TASKS):
+- If content fits multiple types, blend formatting approaches
+- PLANNING + TASKS: Goal/Options/Decision + Action Items section
+- MEETING + TASKS: Meeting structure + Follow-ups as checkboxes
 
 ## Step 2: Format According to Type
 

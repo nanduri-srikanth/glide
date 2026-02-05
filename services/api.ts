@@ -21,9 +21,15 @@ const getDevHost = () => {
   return 'localhost'; // iOS Simulator
 };
 
+// Environment-based API configuration
+// EXPO_PUBLIC_API_PORT: Port number for the API server (default: 8000)
+// EXPO_PUBLIC_API_URL: Full URL for production override (optional)
+const API_PORT = process.env.EXPO_PUBLIC_API_PORT || '8000';
+const PRODUCTION_API_URL = process.env.EXPO_PUBLIC_API_URL;
+
 export const API_BASE_URL = __DEV__
-  ? `http://${getDevHost()}:8000/api/v1`  // Development
-  : 'https://your-production-api.com/api/v1';  // Production
+  ? `http://${getDevHost()}:${API_PORT}/api/v1`  // Development (Glide backend)
+  : PRODUCTION_API_URL || 'https://your-production-api.com/api/v1';  // Production
 
 // Debug: Log the API URL on startup
 console.log('[API] Base URL:', API_BASE_URL);
