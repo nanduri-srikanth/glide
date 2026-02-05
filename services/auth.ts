@@ -58,7 +58,10 @@ class AuthService {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        return { success: false, error: errorData.detail || 'Login failed' };
+        // Handle standardized error format: { error: { message } }
+        // Also support legacy FastAPI format: { detail: "message" }
+        const errorMessage = errorData.error?.message || errorData.detail || 'Login failed';
+        return { success: false, error: errorMessage };
       }
 
       const tokens: LoginResponse = await response.json();
@@ -123,7 +126,10 @@ class AuthService {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        return { success: false, error: errorData.detail || 'Apple Sign-In failed' };
+        // Handle standardized error format: { error: { message } }
+        // Also support legacy FastAPI format: { detail: "message" }
+        const errorMessage = errorData.error?.message || errorData.detail || 'Apple Sign-In failed';
+        return { success: false, error: errorMessage };
       }
 
       const tokens: LoginResponse = await response.json();

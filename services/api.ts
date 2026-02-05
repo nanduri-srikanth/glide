@@ -154,9 +154,16 @@ class ApiService {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        // Handle Pydantic validation errors (detail is an array of error objects)
+        // Handle standardized error format: { error: { code, message, param, details } }
+        // Also support legacy FastAPI format: { detail: "message" } or { detail: [{ msg, ... }] }
         let message = response.statusText;
-        if (typeof errorData.detail === 'string') {
+
+        // Check for new standardized format first
+        if (errorData.error?.message) {
+          message = errorData.error.message;
+        }
+        // Fall back to legacy FastAPI format (detail field)
+        else if (typeof errorData.detail === 'string') {
           message = errorData.detail;
         } else if (Array.isArray(errorData.detail) && errorData.detail.length > 0) {
           // Pydantic validation errors - extract first error message
@@ -165,6 +172,7 @@ class ApiService {
         } else if (errorData.message) {
           message = errorData.message;
         }
+
         return {
           error: {
             status: response.status,
@@ -222,8 +230,27 @@ class ApiService {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
+        // Handle standardized error format: { error: { message } }
+        // Also support legacy FastAPI format: { detail: "message" } or { detail: [{ msg, ... }] }
+        let message = response.statusText;
+
+        // Check for new standardized format first
+        if (errorData.error?.message) {
+          message = errorData.error.message;
+        }
+        // Fall back to legacy FastAPI format (detail field)
+        else if (typeof errorData.detail === 'string') {
+          message = errorData.detail;
+        } else if (Array.isArray(errorData.detail) && errorData.detail.length > 0) {
+          // Pydantic validation errors - extract first error message
+          const firstError = errorData.detail[0];
+          message = firstError.msg || firstError.message || 'Validation error';
+        } else if (errorData.message) {
+          message = errorData.message;
+        }
+
         return {
-          error: { status: response.status, message: errorData.detail || response.statusText },
+          error: { status: response.status, message },
         };
       }
 

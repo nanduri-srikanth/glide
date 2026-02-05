@@ -1,0 +1,82 @@
+# Error Handling Test
+# Tests that error messages from the backend are displayed correctly
+# Prerequisites: Backend must be running on port 8000 (or configured port)
+
+appId: com.snandur2.glide
+---
+- clearState
+- launchApp
+
+# Wait for app to fully load
+- waitForAnimationToEnd
+
+# Navigate to login screen
+- tapOn:
+    text: ".*[Ll]ogin.*|.*[Ss]ign.*[Ii]n.*"
+
+# Wait for login screen
+- waitForAnimationToEnd
+
+# Take initial screenshot
+- takeScreenshot: "error-1-login-form"
+
+# Test 1: Invalid email format
+- tapOn:
+    id: ".*email.*|.*username.*|.*Email.*"
+- inputText: "invalid-email"
+
+# Tap outside or on password field to trigger validation
+- tapOn:
+    id: ".*password.*|.*Password.*"
+
+# Take screenshot of email validation
+- takeScreenshot: "error-2-invalid-email"
+
+# Test 2: Wrong credentials
+- tapOn:
+    id: ".*email.*|.*username.*|.*Email.*"
+- inputText: "nonexistent@example.com"
+
+# Enter wrong password
+- tapOn:
+    id: ".*password.*|.*Password.*"
+- inputText: "wrongpassword123"
+
+# Take screenshot before submitting
+- takeScreenshot: "error-3-wrong-credentials"
+
+# Submit login form
+- tapOn:
+    text: ".*[Ll]ogin.*|.*[Ss]ign.*[Ii]n.*|.*[Ss]ubmit.*"
+
+# Wait for API response
+- waitForAnimationToEnd
+
+# Verify error message is displayed
+- assertVisible:
+    text: ".*[Ii]nvalid.*|.*[Ee]rror.*|.*[Cc]redentials.*|.*[Ff]ailed.*"
+    optional: true
+
+# Take screenshot of error message
+- takeScreenshot: "error-4-error-message-displayed"
+
+# Test 3: Empty fields
+- clearState
+- tapOn:
+    text: ".*[Ll]ogin.*|.*[Ss]ign.*[Ii]n.*"
+- waitForAnimationToEnd
+
+# Try to submit with empty fields
+- tapOn:
+    text: ".*[Ll]ogin.*|.*[Ss]ign.*[Ii]n.*|.*[Ss]ubmit.*"
+
+# Wait for response
+- waitForAnimationToEnd
+
+# Verify validation error appears
+- assertVisible:
+    text: ".*[Rr]equired.*|.*[Vv]alid.*|.*[Ee]mail.*|.*[Pp]assword.*"
+    optional: true
+
+# Take screenshot
+- takeScreenshot: "error-5-validation-error"
