@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import LocalAuthentication
 
 /// Dependency Injection Container
 /// Provides centralized access to shared services and dependencies
@@ -234,7 +235,26 @@ protocol AuthServiceProtocol {
 protocol KeychainServiceProtocol {
     func get(key: String) -> String?
     func set(key: String, value: String) throws
+    func set(key: String, value: String, requireBiometric: Bool) throws
     func delete(key: String) throws
+    func isBiometricAvailable() -> Bool
+    func getBiometricType() -> LABiometryType
+}
+
+// Default implementation for backward compatibility
+extension KeychainServiceProtocol {
+    func set(key: String, value: String, requireBiometric: Bool) throws {
+        // Default implementation just calls the basic set method
+        try set(key: key, value: value)
+    }
+
+    func isBiometricAvailable() -> Bool {
+        return false
+    }
+
+    func getBiometricType() -> LABiometryType {
+        return .none
+    }
 }
 
 /// User Defaults Service Protocol

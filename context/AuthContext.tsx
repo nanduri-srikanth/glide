@@ -7,6 +7,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { authService, User } from '@/services/auth';
 import { notesService } from '@/services/notes';
 import api from '@/services/api';
+import { RateLimitStatus } from '@/utils/rateLimit';
 
 // Navigation persistence key (must match useNavigationPersistence)
 const NAVIGATION_STATE_KEY = 'glide_last_route';
@@ -26,7 +27,7 @@ interface AuthContextType {
   user: User | null;
   isLoading: boolean;
   isAuthenticated: boolean;
-  login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  login: (email: string, password: string) => Promise<{ success: boolean; error?: string; rateLimitStatus?: RateLimitStatus }>;
   register: (email: string, password: string, fullName?: string) => Promise<{ success: boolean; error?: string }>;
   signInWithApple: () => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;

@@ -137,13 +137,26 @@ class AuthService: AuthServiceProtocol {
         let body = try JSONEncoder().encode(request)
         let response: LoginResponse = try await apiService.request("/auth/login", method: .post, body: body)
 
-        // Save auth token and user ID
-        try keychainService.set(key: "auth_token", value: response.token)
+        // Save auth token with biometric protection
+        // Check if biometric authentication is available
+        if keychainService.isBiometricAvailable() {
+            try keychainService.set(key: "auth_token", value: response.token, requireBiometric: true)
+            logger.info("Auth token stored with biometric protection", file: #file, function: #function, line: #line)
+        } else {
+            try keychainService.set(key: "auth_token", value: response.token)
+            logger.info("Auth token stored without biometric (hardware not available)", file: #file, function: #function, line: #line)
+        }
+
+        // Store user ID without biometric (not sensitive)
         try keychainService.set(key: "user_id", value: response.user.id)
 
-        // Store refresh token if provided
+        // Store refresh token with biometric protection
         if let refreshToken = response.refresh_token {
-            try keychainService.set(key: "refresh_token", value: refreshToken)
+            if keychainService.isBiometricAvailable() {
+                try keychainService.set(key: "refresh_token", value: refreshToken, requireBiometric: true)
+            } else {
+                try keychainService.set(key: "refresh_token", value: refreshToken)
+            }
         }
 
         // Calculate and store token expiration
@@ -176,13 +189,26 @@ class AuthService: AuthServiceProtocol {
         let body = try JSONEncoder().encode(request)
         let response: RegisterResponse = try await apiService.request("/auth/register", method: .post, body: body)
 
-        // Save auth token and user ID
-        try keychainService.set(key: "auth_token", value: response.token)
+        // Save auth token with biometric protection
+        // Check if biometric authentication is available
+        if keychainService.isBiometricAvailable() {
+            try keychainService.set(key: "auth_token", value: response.token, requireBiometric: true)
+            logger.info("Auth token stored with biometric protection", file: #file, function: #function, line: #line)
+        } else {
+            try keychainService.set(key: "auth_token", value: response.token)
+            logger.info("Auth token stored without biometric (hardware not available)", file: #file, function: #function, line: #line)
+        }
+
+        // Store user ID without biometric (not sensitive)
         try keychainService.set(key: "user_id", value: response.user.id)
 
-        // Store refresh token if provided
+        // Store refresh token with biometric protection
         if let refreshToken = response.refresh_token {
-            try keychainService.set(key: "refresh_token", value: refreshToken)
+            if keychainService.isBiometricAvailable() {
+                try keychainService.set(key: "refresh_token", value: refreshToken, requireBiometric: true)
+            } else {
+                try keychainService.set(key: "refresh_token", value: refreshToken)
+            }
         }
 
         // Calculate and store token expiration
@@ -282,9 +308,14 @@ class AuthService: AuthServiceProtocol {
         let body = try JSONEncoder().encode(["refresh_token": refreshToken])
         let response: TokenResponse = try await apiService.request("/auth/refresh", method: .post, body: body)
 
-        // Save new tokens
-        try keychainService.set(key: "auth_token", value: response.accessToken)
-        try keychainService.set(key: "refresh_token", value: response.refreshToken)
+        // Save new tokens with biometric protection
+        if keychainService.isBiometricAvailable() {
+            try keychainService.set(key: "auth_token", value: response.accessToken, requireBiometric: true)
+            try keychainService.set(key: "refresh_token", value: response.refreshToken, requireBiometric: true)
+        } else {
+            try keychainService.set(key: "auth_token", value: response.accessToken)
+            try keychainService.set(key: "refresh_token", value: response.refreshToken)
+        }
 
         // Update token expiration
         let expiration = Date().addingTimeInterval(TimeInterval(response.expiresIn))

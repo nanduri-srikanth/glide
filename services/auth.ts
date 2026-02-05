@@ -4,6 +4,7 @@
 
 import api, { API_BASE_URL } from './api';
 import * as AppleAuthentication from 'expo-apple-authentication';
+import { checkRateLimit, recordFailedAttempt, clearAttempts, RateLimitStatus } from '@/utils/rateLimit';
 
 export interface User {
   id: string;
@@ -44,7 +45,18 @@ class AuthService {
     return { user: response.data };
   }
 
-  async login(data: LoginData): Promise<{ success: boolean; error?: string }> {
+  async login(data: LoginData): Promise<{ success: boolean; error?: string; rateLimitStatus?: RateLimitStatus }> {
+    // Check rate limit first
+    const rateLimitStatus = await checkRateLimit(data.email);
+    if (rateLimitStatus.isLockedOut) {
+      const minutesLeft = Math.ceil(rateLimitStatus.lockoutRemainingSeconds / 60);
+      return {
+        success: false,
+        error: `Too many failed attempts. Please try again in ${minutesLeft} minute${minutesLeft > 1 ? 's' : ''}.`,
+        rateLimitStatus
+      };
+    }
+
     const formData = new URLSearchParams();
     formData.append('username', data.email);
     formData.append('password', data.password);
@@ -61,11 +73,32 @@ class AuthService {
         // Handle standardized error format: { error: { message } }
         // Also support legacy FastAPI format: { detail: "message" }
         const errorMessage = errorData.error?.message || errorData.detail || 'Login failed';
-        return { success: false, error: errorMessage };
+
+        // Record failed attempt
+        const newStatus = await recordFailedAttempt(data.email);
+
+        if (newStatus.isLockedOut) {
+          const minutesLeft = Math.ceil(newStatus.lockoutRemainingSeconds / 60);
+          return {
+            success: false,
+            error: `Too many failed attempts. Please try again in ${minutesLeft} minute${minutesLeft > 1 ? 's' : ''}.`,
+            rateLimitStatus: newStatus
+          };
+        }
+
+        return {
+          success: false,
+          error: errorMessage,
+          rateLimitStatus: newStatus
+        };
       }
 
       const tokens: LoginResponse = await response.json();
       await api.saveTokens(tokens.access_token, tokens.refresh_token);
+
+      // Clear failed attempts on successful login
+      await clearAttempts(data.email);
+
       return { success: true };
     } catch (error) {
       return { success: false, error: 'Network error' };

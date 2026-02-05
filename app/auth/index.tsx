@@ -17,6 +17,7 @@ import * as AppleAuthentication from 'expo-apple-authentication';
 import { NotesColors } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
 import { validateRegistration, RegistrationValidationResult } from '@/utils/validation';
+import { RateLimitStatus, checkRateLimit } from '@/utils/rateLimit';
 
 type AuthMode = 'login' | 'register';
 
@@ -33,10 +34,44 @@ export default function AuthScreen() {
   const [appleAuthAvailable, setAppleAuthAvailable] = useState(false);
   const [isAppleLoading, setIsAppleLoading] = useState(false);
   const [validationErrors, setValidationErrors] = useState<RegistrationValidationResult['errors']>({});
+  const [rateLimitStatus, setRateLimitStatus] = useState<RateLimitStatus | null>(null);
+  const [remainingTime, setRemainingTime] = useState(0);
 
   useEffect(() => {
     AppleAuthentication.isAvailableAsync().then(setAppleAuthAvailable);
   }, []);
+
+  // Countdown timer for lockout
+  useEffect(() => {
+    if (!rateLimitStatus?.isLockedOut || remainingTime <= 0) {
+      return;
+    }
+
+    const timer = setInterval(() => {
+      setRemainingTime(prev => {
+        if (prev <= 1) {
+          // Lockout expired, check status
+          checkRateLimit(email).then(setRateLimitStatus);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [rateLimitStatus, remainingTime, email]);
+
+  // Check rate limit when email changes
+  useEffect(() => {
+    if (mode === 'login' && email) {
+      checkRateLimit(email).then(status => {
+        setRateLimitStatus(status);
+        if (status.isLockedOut) {
+          setRemainingTime(status.lockoutRemainingSeconds);
+        }
+      });
+    }
+  }, [email, mode]);
 
   const handleSubmit = async () => {
     // Clear previous validation errors
@@ -53,6 +88,14 @@ export default function AuthScreen() {
       if (result.success) {
         router.replace('/(tabs)');
       } else {
+        // Update rate limit status from result
+        if (result.rateLimitStatus) {
+          setRateLimitStatus(result.rateLimitStatus);
+          if (result.rateLimitStatus.isLockedOut) {
+            setRemainingTime(result.rateLimitStatus.lockoutRemainingSeconds);
+          }
+        }
+
         Alert.alert(
           'Error',
           result.error || 'Invalid email or password. Please try again.'
@@ -126,6 +169,32 @@ export default function AuthScreen() {
           <Text style={styles.appName}>Glide</Text>
           <Text style={styles.tagline}>Voice notes, powered by AI</Text>
         </View>
+
+        {/* Rate Limit Lockout Warning */}
+        {mode === 'login' && rateLimitStatus?.isLockedOut && (
+          <View style={styles.lockoutWarning}>
+            <Ionicons name="lock-closed" size={24} color="#EF4444" />
+            <View style={styles.lockoutContent}>
+              <Text style={styles.lockoutTitle}>Account Temporarily Locked</Text>
+              <Text style={styles.lockoutMessage}>
+                Too many failed login attempts. Please wait for the lockout to expire.
+              </Text>
+              <Text style={styles.lockoutTimer}>
+                Time remaining: {Math.floor(remainingTime / 60)}:{(remainingTime % 60).toString().padStart(2, '0')}
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {/* Remaining Attempts Warning */}
+        {mode === 'login' && !rateLimitStatus?.isLockedOut && rateLimitStatus && rateLimitStatus.remainingAttempts < 3 && (
+          <View style={styles.attemptsWarning}>
+            <Ionicons name="warning" size={20} color="#F59E0B" />
+            <Text style={styles.attemptsText}>
+              {rateLimitStatus.remainingAttempts} attempt{rateLimitStatus.remainingAttempts !== 1 ? 's' : ''} remaining
+            </Text>
+          </View>
+        )}
 
         {/* Form */}
         <View style={styles.form}>
