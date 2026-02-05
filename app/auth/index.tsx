@@ -16,6 +16,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import { NotesColors } from '@/constants/theme';
 import { useAuth } from '@/context/AuthContext';
+import { validateRegistration, RegistrationValidationResult } from '@/utils/validation';
 
 type AuthMode = 'login' | 'register';
 
@@ -25,41 +26,64 @@ export default function AuthScreen() {
   const [mode, setMode] = useState<AuthMode>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [name, setName] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [appleAuthAvailable, setAppleAuthAvailable] = useState(false);
   const [isAppleLoading, setIsAppleLoading] = useState(false);
+  const [validationErrors, setValidationErrors] = useState<RegistrationValidationResult['errors']>({});
 
   useEffect(() => {
     AppleAuthentication.isAvailableAsync().then(setAppleAuthAvailable);
   }, []);
 
   const handleSubmit = async () => {
-    if (!email.trim() || !password.trim()) {
-      Alert.alert('Error', 'Please fill in all fields');
-      return;
-    }
+    // Clear previous validation errors
+    setValidationErrors({});
 
-    if (mode === 'register' && !name.trim()) {
-      Alert.alert('Error', 'Please enter your name');
-      return;
-    }
-
-    let result: { success: boolean; error?: string };
+    // Basic validation for login
     if (mode === 'login') {
-      result = await login(email.trim(), password);
-    } else {
-      result = await register(email.trim(), password, name.trim());
+      if (!email.trim() || !password.trim()) {
+        Alert.alert('Error', 'Please fill in all fields');
+        return;
+      }
+
+      const result = await login(email.trim(), password);
+      if (result.success) {
+        router.replace('/(tabs)');
+      } else {
+        Alert.alert(
+          'Error',
+          result.error || 'Invalid email or password. Please try again.'
+        );
+      }
+      return;
     }
 
+    // Full validation for registration
+    const validation = validateRegistration({
+      email: email.trim(),
+      password,
+      confirmPassword,
+      fullName: name.trim(),
+    });
+
+    if (!validation.isValid) {
+      setValidationErrors(validation.errors);
+      // Show first error in alert
+      const firstError = Object.values(validation.errors)[0];
+      Alert.alert('Validation Error', firstError || 'Please fix the errors and try again.');
+      return;
+    }
+
+    const result = await register(email.trim(), password, name.trim());
     if (result.success) {
       router.replace('/(tabs)');
     } else {
       Alert.alert(
         'Error',
-        result.error || (mode === 'login'
-          ? 'Invalid email or password. Please try again.'
-          : 'Registration failed. Please try again.')
+        result.error || 'Registration failed. Please try again.'
       );
     }
   };
@@ -68,7 +92,9 @@ export default function AuthScreen() {
     setMode(mode === 'login' ? 'register' : 'login');
     setEmail('');
     setPassword('');
+    setConfirmPassword('');
     setName('');
+    setValidationErrors({});
   };
 
   const handleAppleSignIn = async () => {

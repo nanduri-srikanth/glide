@@ -1,0 +1,91 @@
+# Registration Flow Test
+# Tests end-to-end user registration functionality with backend API
+# Prerequisites: Backend must be running on port 8000 (or configured port)
+
+appId: com.snandur2.glide
+---
+- clearState
+- launchApp
+
+# Wait for app to fully load
+- waitForAnimationToEnd
+
+# Take initial screenshot
+- takeScreenshot: "register-1-app-start"
+
+# Navigate to auth/login screen
+- tapOn:
+    text: ".*[Ll]ogin.*|.*[Ss]ign.*[Ii]n.*"
+    optional: false
+
+# Wait for auth screen to load
+- waitForAnimationToEnd
+
+# Take screenshot of login form
+- takeScreenshot: "register-2-login-screen"
+
+# Switch to registration mode
+- tapOn:
+    text: ".*[Ss]ign.*[Uu].*|.*[Rr]egiste.*|.*don't.*have.*account.*"
+
+# Wait for registration form
+- waitForAnimationToEnd
+
+# Take screenshot of registration form
+- takeScreenshot: "register-3-registration-form"
+
+# Verify registration form fields are visible
+- assertVisible:
+    text: ".*[Ff]ull.*[Nn]ame.*|.*[Nn]ame.*"
+
+- assertVisible:
+    text: ".*[Ee]mail.*"
+
+- assertVisible:
+    text: ".*[Pp]assword.*"
+
+# Enter unique test user data (using timestamp to avoid conflicts)
+- tapOn:
+    id: ".*name.*|.*[Nn]ame.*"
+- inputText: "Test User ${__timestamp__}"
+
+- tapOn:
+    id: ".*email.*|.*[Ee]mail.*"
+- inputText: "test${__timestamp__}@example.com"
+
+- tapOn:
+    id: ".*password.*|.*[Pp]assword.*"
+- inputText: "testpassword123"
+
+# Take screenshot before submitting
+- takeScreenshot: "register-4-form-filled"
+
+# Submit registration form
+- tapOn:
+    text: ".*[Cc]reate.*[Aa]ccount.*|.*[Rr]egiste.*|.*[Ss]ign.*[Uu].*"
+
+# Wait for API response and auto-login
+- waitForAnimationToEnd
+
+# Wait for navigation to home screen (max 10 seconds)
+- waitForAnimationToEnd
+
+# Take screenshot after registration
+- takeScreenshot: "register-5-after-registration"
+
+# Verify successful registration and login - should see home screen
+- assertVisible:
+    text: ".*[Nn]otes.*|.*[Rr]ecord.*|.*[Hh]ome.*|.*[Gg]lide.*"
+    optional: true
+
+# Verify no error messages
+- assertNotVisible:
+    text: ".*[Ee]rror.*|.*[Ff]ailed.*|.*already.*exist.*"
+
+# Take final screenshot of successful registration
+- takeScreenshot: "register-6-registration-success"
+
+# Verify user is logged in (check for logout button or user profile)
+- assertVisible:
+    text: ".*[Ll]ogout.*|.*[Pp]rofile.*|.*[Ss]ettings.*"
+    optional: true
