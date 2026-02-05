@@ -17,6 +17,8 @@ struct NotesListView: View {
     @StateObject private var appState = AppState.shared
 
     @State private var isShowingSearch = false
+    @State private var createNoteViewModel: CreateNoteViewModel?
+    @State private var foldersViewModel: FoldersViewModel?
 
     // MARK: - Initialization
 
@@ -45,6 +47,14 @@ struct NotesListView: View {
                 if viewModel.notes.isEmpty {
                     viewModel.refresh()
                 }
+
+                // Initialize folders view model if needed
+                if foldersViewModel == nil {
+                    foldersViewModel = DependencyContainer.shared.makeFoldersViewModel()
+                    Task {
+                        await foldersViewModel?.loadFolders()
+                    }
+                }
             }
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
@@ -64,7 +74,8 @@ struct NotesListView: View {
                         }
 
                         Button(action: {
-                            navigationCoordinator.presentSheet(.newNote)
+                            // Create new view model instance
+                            createNoteViewModel = DependencyContainer.shared.makeCreateNoteViewModel()
                         }) {
                             Image(systemName: "plus")
                         }
@@ -91,6 +102,22 @@ struct NotesListView: View {
             } message: {
                 if let errorMessage = viewModel.errorMessage {
                     Text(errorMessage)
+                }
+            }
+            .sheet(item: $createNoteViewModel) { viewModel in
+                if let foldersViewModel = foldersViewModel {
+                    CreateNoteView(
+                        viewModel: viewModel,
+                        foldersViewModel: foldersViewModel
+                    )
+                    .interactiveDismissDisabled(viewModel.isLoading)
+                    .onDisappear {
+                        // Refresh notes list after creating a note
+                        if viewModel.createdNote != nil {
+                            viewModel.reset()
+                            refresh()
+                        }
+                    }
                 }
             }
         }
@@ -122,7 +149,7 @@ struct NotesListView: View {
                 .multilineTextAlignment(.center)
 
             Button(action: {
-                navigationCoordinator.presentSheet(.newNote)
+                createNoteViewModel = DependencyContainer.shared.makeCreateNoteViewModel()
             }) {
                 Text("Create Note")
                     .font(.headline)

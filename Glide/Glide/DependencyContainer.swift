@@ -176,6 +176,14 @@ class DependencyContainer {
         )
     }
 
+    func makeEditNoteViewModel(note: Note) -> EditNoteViewModel {
+        return EditNoteViewModel(
+            note: note,
+            notesRepository: notesRepository,
+            logger: loggerService
+        )
+    }
+
     // MARK: - Testing Support
 
     #if DEBUG

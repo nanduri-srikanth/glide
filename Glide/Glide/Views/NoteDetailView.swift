@@ -15,6 +15,7 @@ struct NoteDetailView: View {
     @StateObject private var viewModel: NoteDetailViewModel
     @Environment(\.dismiss) private var dismiss
     @State private var showingDeleteAlert = false
+    @State private var showingEditSheet = false
 
     // MARK: - Initialization
 
@@ -41,6 +42,16 @@ struct NoteDetailView: View {
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 HStack(spacing: DesignConstants.spacingM) {
+                    // Edit button
+                    if let note = viewModel.note {
+                        Button(action: {
+                            showingEditSheet = true
+                        }) {
+                            Image(systemName: "pencil")
+                                .foregroundColor(.blue)
+                        }
+                    }
+
                     // Pin toggle button
                     if let note = viewModel.note {
                         Button(action: {
@@ -74,6 +85,22 @@ struct NoteDetailView: View {
                         }
                     }
                 }
+            }
+        }
+        .sheet(isPresented: $showingEditSheet) {
+            if let note = viewModel.note {
+                EditNoteView(
+                    viewModel: EditNoteViewModel(
+                        note: note,
+                        notesRepository: DependencyContainer.shared.notesRepository,
+                        logger: DependencyContainer.shared.loggerService
+                    ),
+                    foldersViewModel: FoldersViewModel(
+                        foldersRepository: DependencyContainer.shared.foldersRepository,
+                        logger: DependencyContainer.shared.loggerService
+                    )
+                )
+                .interactiveDismissDisabled(!viewModel.isLoading)
             }
         }
         .alert("Delete Note?", isPresented: $showingDeleteAlert) {
