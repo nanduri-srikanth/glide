@@ -81,6 +81,28 @@ struct RegisterView: View {
                                 .foregroundStyle(.white)
                                 .keyboardType(.emailAddress)
                                 .autocapitalization(.none)
+                                .onChange(of: viewModel.email) { oldValue, newValue in
+                                    viewModel.validateEmail()
+                                }
+
+                            // Email validation feedback
+                            if !viewModel.email.isEmpty && viewModel.emailErrorMessage != nil {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "exclamationmark.circle.fill")
+                                        .font(.caption)
+                                    Text(viewModel.emailErrorMessage!)
+                                        .font(.caption)
+                                }
+                                .foregroundStyle(.white.opacity(0.9))
+                            } else if !viewModel.email.isEmpty && viewModel.isEmailValid {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .font(.caption)
+                                    Text("Valid email format")
+                                        .font(.caption)
+                                }
+                                .foregroundStyle(.green)
+                            }
                         }
 
                         // Password SecureField

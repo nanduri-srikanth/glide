@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import BackgroundTasks
 
 @main
 struct GlideApp: App {
@@ -13,6 +14,9 @@ struct GlideApp: App {
 
     @StateObject private var appState = AppState.shared
     @StateObject private var navigationCoordinator = NavigationCoordinator.shared
+
+    // Background task identifier for token refresh
+    private let backgroundTaskIdentifier = "com.glide.tokenRefresh"
 
     // MARK: - Body
 
@@ -26,6 +30,9 @@ struct GlideApp: App {
                 }
                 .onOpenURL { url in
                     handleDeepLink(url)
+                }
+                .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
+                    handleAppWillEnterForeground()
                 }
         }
     }
@@ -45,6 +52,9 @@ struct GlideApp: App {
             // Initialize dependency container
             _ = DependencyContainer.shared
 
+            // Register background task for token refresh
+            registerBackgroundTasks()
+
             #if DEBUG
             print("✅ Glide App Started")
             print("📱 API Endpoint: \(Config.apiEndpoint)")
@@ -53,6 +63,48 @@ struct GlideApp: App {
         } catch {
             print("❌ Failed to initialize database: \(error.localizedDescription)")
             // In production, you might want to show an error to the user
+        }
+    }
+
+    // MARK: - Background Tasks
+
+    /// Register background task for proactive token refresh
+    private func registerBackgroundTasks() {
+        do {
+            try BGTaskScheduler.shared.register(
+                forTaskWithIdentifier: backgroundTaskIdentifier,
+                using: nil
+            ) { [weak self] task in
+                self?.handleBackgroundTokenRefresh(task as! BGAppRefreshTask)
+            }
+
+            print("✅ Background token refresh task registered")
+        } catch {
+            print("❌ Failed to register background task: \(error.localizedDescription)")
+        }
+    }
+
+    /// Handle background token refresh task
+    private func handleBackgroundTokenRefresh(_ task: BGAppRefreshTask) {
+        // Get the auth service from dependency container
+        let authService = DependencyContainer.shared.makeAuthService()
+
+        // Delegate to auth service to handle the refresh
+        authService.handleBackgroundTokenRefresh(task: task)
+    }
+
+    /// Handle app entering foreground (refresh token if needed)
+    private func handleAppWillEnterForeground() {
+        Task {
+            // When app returns to foreground, check if token needs refresh
+            let authService = DependencyContainer.shared.makeAuthService()
+
+            do {
+                try await authService.refreshTokenIfNeeded()
+                print("✅ Token refresh check on app resume")
+            } catch {
+                print("⚠️ Token refresh on resume failed: \(error.localizedDescription)")
+            }
         }
     }
 
