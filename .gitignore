@@ -97,6 +97,14 @@ build/
 dist/
 *.egg-info/
 
+# Xcode/Swift build directories
+Glide/.build/
+Glide/DerivedData/
+DerivedData/
+.build/
+*.xcuserstate
+*.xcuserdatad/
+
 # Test coverage
 .coverage
 htmlcov/
