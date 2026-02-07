@@ -18,7 +18,7 @@ import { Platform } from 'react-native';
 export const DB_NAME = 'glide.db';
 
 // Database version for migrations
-export const DB_VERSION = 1;
+export const DB_VERSION = 5;
 
 // Enable debug logging in development
 const DEBUG = __DEV__;
@@ -116,6 +116,7 @@ class DatabaseManager {
     if (DEBUG) console.log('[Database] Creating tables...');
 
     // Create folders table
+    // Note: user_id references Supabase Auth user, not a local users table
     await this.db.execAsync(`
       CREATE TABLE IF NOT EXISTS folders (
         id TEXT PRIMARY KEY,
@@ -129,7 +130,7 @@ class DatabaseManager {
         depth INTEGER DEFAULT 0,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
-        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        sync_status TEXT DEFAULT 'synced',
         FOREIGN KEY (parent_id) REFERENCES folders(id) ON DELETE CASCADE
       );
 
@@ -138,6 +139,7 @@ class DatabaseManager {
     `);
 
     // Create notes table
+    // Note: user_id references Supabase Auth user, not a local users table
     await this.db.execAsync(`
       CREATE TABLE IF NOT EXISTS notes (
         id TEXT PRIMARY KEY,
@@ -149,6 +151,7 @@ class DatabaseManager {
         duration INTEGER,
         audio_url TEXT,
         audio_format TEXT,
+        local_audio_path TEXT,
         tags TEXT DEFAULT '[]',
         is_pinned INTEGER DEFAULT 0,
         is_archived INTEGER DEFAULT 0,
@@ -158,7 +161,9 @@ class DatabaseManager {
         ai_metadata TEXT DEFAULT '{}',
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
-        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        sync_status TEXT DEFAULT 'synced',
+        local_updated_at TEXT,
+        server_updated_at TEXT,
         FOREIGN KEY (folder_id) REFERENCES folders(id) ON DELETE SET NULL
       );
 
@@ -192,6 +197,7 @@ class DatabaseManager {
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         executed_at TEXT,
+        sync_status TEXT DEFAULT 'synced',
         FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE
       );
 
@@ -204,18 +210,18 @@ class DatabaseManager {
     // Create sync_queue table for offline sync
     await this.db.execAsync(`
       CREATE TABLE IF NOT EXISTS sync_queue (
-        id TEXT PRIMARY KEY,
-        table_name TEXT NOT NULL,
-        record_id TEXT NOT NULL,
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        entity_type TEXT NOT NULL,
+        entity_id TEXT NOT NULL,
         operation TEXT NOT NULL,
-        data TEXT NOT NULL,
+        payload TEXT,
         created_at TEXT NOT NULL,
-        attempts INTEGER DEFAULT 0,
+        retry_count INTEGER DEFAULT 0,
         last_error TEXT,
         status TEXT DEFAULT 'pending'
       );
 
-      CREATE INDEX IF NOT EXISTS idx_sync_queue_table ON sync_queue(table_name);
+      CREATE INDEX IF NOT EXISTS idx_sync_queue_entity_type ON sync_queue(entity_type);
       CREATE INDEX IF NOT EXISTS idx_sync_queue_status ON sync_queue(status);
       CREATE INDEX IF NOT EXISTS idx_sync_queue_created_at ON sync_queue(created_at);
     `);
@@ -238,6 +244,15 @@ class DatabaseManager {
 
       CREATE INDEX IF NOT EXISTS idx_audio_uploads_note_id ON audio_uploads(note_id);
       CREATE INDEX IF NOT EXISTS idx_audio_uploads_status ON audio_uploads(status);
+    `);
+
+    // Create metadata table for storing key-value pairs (e.g., last sync timestamp)
+    await this.db.execAsync(`
+      CREATE TABLE IF NOT EXISTS metadata (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
     `);
 
     if (DEBUG) console.log('[Database] Tables created successfully');
@@ -288,10 +303,93 @@ class DatabaseManager {
         // Initial schema is created in createTables()
         break;
 
-      // Future migrations would go here
-      // case 2:
-      //   await this.db.execAsync(`ALTER TABLE notes ADD COLUMN new_field TEXT;`);
-      //   break;
+      case 2:
+        // Add audio_uploads table for existing databases
+        // This table was added to createTables() but existing installations
+        // don't have it, so we need to create it via migration
+        await this.db.execAsync(`
+          CREATE TABLE IF NOT EXISTS audio_uploads (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            note_id TEXT NOT NULL,
+            local_path TEXT NOT NULL,
+            remote_url TEXT,
+            file_size INTEGER,
+            status TEXT DEFAULT 'pending',
+            retry_count INTEGER DEFAULT 0,
+            last_error TEXT,
+            created_at TEXT NOT NULL,
+            uploaded_at TEXT,
+            FOREIGN KEY (note_id) REFERENCES notes(id) ON DELETE CASCADE
+          );
+
+          CREATE INDEX IF NOT EXISTS idx_audio_uploads_note_id ON audio_uploads(note_id);
+          CREATE INDEX IF NOT EXISTS idx_audio_uploads_status ON audio_uploads(status);
+        `);
+        break;
+
+      case 3:
+        // Add sync_status columns to folders, notes, and actions tables
+        // These columns are expected by the Drizzle schema but were not in the original SQLite schema
+        // Use try/catch for each ALTER TABLE since columns may already exist in fresh installs
+
+        // Add sync_status to folders table
+        try {
+          await this.db.execAsync(`ALTER TABLE folders ADD COLUMN sync_status TEXT DEFAULT 'synced';`);
+        } catch (e) { /* Column may already exist */ }
+
+        // Add sync_status, local_updated_at, server_updated_at to notes table
+        try {
+          await this.db.execAsync(`ALTER TABLE notes ADD COLUMN sync_status TEXT DEFAULT 'synced';`);
+        } catch (e) { /* Column may already exist */ }
+        try {
+          await this.db.execAsync(`ALTER TABLE notes ADD COLUMN local_updated_at TEXT;`);
+        } catch (e) { /* Column may already exist */ }
+        try {
+          await this.db.execAsync(`ALTER TABLE notes ADD COLUMN server_updated_at TEXT;`);
+        } catch (e) { /* Column may already exist */ }
+        try {
+          await this.db.execAsync(`ALTER TABLE notes ADD COLUMN local_audio_path TEXT;`);
+        } catch (e) { /* Column may already exist */ }
+
+        // Add sync_status to actions table
+        try {
+          await this.db.execAsync(`ALTER TABLE actions ADD COLUMN sync_status TEXT DEFAULT 'synced';`);
+        } catch (e) { /* Column may already exist */ }
+        break;
+
+      case 4:
+        // Recreate sync_queue table with correct schema
+        // The old schema used different column names (table_name, record_id, data, attempts)
+        // The Drizzle schema expects (entity_type, entity_id, payload, retry_count)
+        // Drop and recreate since pending sync items can be regenerated
+        await this.db.execAsync(`DROP TABLE IF EXISTS sync_queue;`);
+        await this.db.execAsync(`
+          CREATE TABLE sync_queue (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            entity_type TEXT NOT NULL,
+            entity_id TEXT NOT NULL,
+            operation TEXT NOT NULL,
+            payload TEXT,
+            created_at TEXT NOT NULL,
+            retry_count INTEGER DEFAULT 0,
+            last_error TEXT,
+            status TEXT DEFAULT 'pending'
+          );
+
+          CREATE INDEX IF NOT EXISTS idx_sync_queue_entity_type ON sync_queue(entity_type);
+          CREATE INDEX IF NOT EXISTS idx_sync_queue_status ON sync_queue(status);
+          CREATE INDEX IF NOT EXISTS idx_sync_queue_created_at ON sync_queue(created_at);
+        `);
+
+        // Create metadata table if it doesn't exist
+        await this.db.execAsync(`
+          CREATE TABLE IF NOT EXISTS metadata (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+          );
+        `);
+        break;
 
       default:
         throw new Error(`Unknown migration version: ${version}`);
